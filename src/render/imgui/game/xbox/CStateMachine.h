@@ -108,8 +108,10 @@ public:
     int capturePad() const; // -1 = any controller
     void captureButton(int pad, int button);
     void cancelCapture();
+    void closeNow(); // F4 / the combo: closes from anywhere, a capture or a subpage included
 
 private:
+    void refreshProfileNames(); // after a profile was added
     bool handleSubOptionStays(); // the chosen entry's effect; true to stay on the subpage
     void refreshSubpage();
     void startCapture(CaptureKind kind, int player, int action = 0);

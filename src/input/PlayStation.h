@@ -3,6 +3,8 @@
 #include <Windows.h>
 #include <Xinput.h>
 
+#include <string>
+
 // DualShock 4 and DualSense controllers read straight from their HID reports
 // (USB or Bluetooth) and handed to the game as XInput controllers in the free
 // XInput slots, so they work without DS4Windows or Steam Input. Rumble and the
@@ -20,5 +22,5 @@ namespace AlphaRing::Input::PlayStation {
     DWORD ConnectedMask();
     bool SetVibration(DWORD slot, const XINPUT_VIBRATION* vibration);
     void SetSlotPlayer(DWORD slot, int player); // for the lightbar; -1 for none
-    const char* SlotName(DWORD slot);           // "DualSense (Bluetooth)", or null
+    std::string SlotName(DWORD slot);           // "DualSense (Bluetooth)", or empty
 }

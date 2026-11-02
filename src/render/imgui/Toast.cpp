@@ -71,11 +71,11 @@ namespace AlphaRing::Toast {
                 alpha = (float)(k_lifetime - age) / (float)k_fade;
             ImVec2 size = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, message.text.c_str());
             float x = viewport->Pos.x + (viewport->Size.x - size.x) * 0.5f;
-            ImVec2 min(x - padX, y), max(x + size.x + padX, y + size.y + padY * 2);
-            draw->AddRectFilled(min, max, IM_COL32(16, 16, 16, (int)(215 * alpha)), 6.0f * scale);
-            draw->AddRectFilled(ImVec2(min.x, min.y), ImVec2(min.x + 5.0f * scale, max.y), IM_COL32(16, 124, 16, (int)(255 * alpha)), 6.0f * scale, ImDrawFlags_RoundCornersLeft);
+            ImVec2 lo(x - padX, y), hi(x + size.x + padX, y + size.y + padY * 2);
+            draw->AddRectFilled(lo, hi, IM_COL32(16, 16, 16, (int)(215 * alpha)), 6.0f * scale);
+            draw->AddRectFilled(lo, ImVec2(lo.x + 5.0f * scale, hi.y), IM_COL32(16, 124, 16, (int)(255 * alpha)), 6.0f * scale, ImDrawFlags_RoundCornersLeft);
             draw->AddText(font, fontSize, ImVec2(x, y + padY), IM_COL32(255, 255, 255, (int)(255 * alpha)), message.text.c_str());
-            y = max.y + 8.0f * scale;
+            y = hi.y + 8.0f * scale;
         }
     }
 }

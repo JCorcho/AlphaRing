@@ -63,7 +63,7 @@ void CXboxContext::open(int pad) {
 
 void CXboxContext::close() {
     if (m_stateMachine.has_value())
-        m_stateMachine->handleInput(InputCommand::Back);
+        m_stateMachine->closeNow();
 }
 
 bool CXboxContext::isOpen() const {

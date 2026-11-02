@@ -643,8 +643,8 @@ inline void renderCapturePrompt(int WINDOW_WIDTH, int WINDOW_HEIGHT, const State
     draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), IM_COL32(245, 245, 245, 250), 8.0f);
     draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h * 0.32f), IM_COL32(9, 117, 6, 255), 8.0f, ImDrawFlags_RoundCornersTop);
     float big = 25.0f + ((WINDOW_HEIGHT / 1080.0f) * 10.0f);
-    float small = 20.0f + ((WINDOW_HEIGHT / 1080.0f) * 4.0f);
+    float hintSize = 20.0f + ((WINDOW_HEIGHT / 1080.0f) * 4.0f);
     drawText((int)x, (int)y, (int)w, (int)(h * 0.32f), font, big, IM_COL32(255, 255, 255, 255), title.c_str());
     drawText((int)x, (int)(y + h * 0.32f), (int)w, (int)(h * 0.40f), font, big, IM_COL32(0, 0, 0, 255), detail.c_str());
-    drawText((int)x, (int)(y + h * 0.70f), (int)w, (int)(h * 0.28f), font, small, IM_COL32(90, 90, 90, 255), hint.c_str());
+    drawText((int)x, (int)(y + h * 0.70f), (int)w, (int)(h * 0.28f), font, hintSize, IM_COL32(90, 90, 90, 255), hint.c_str());
 }

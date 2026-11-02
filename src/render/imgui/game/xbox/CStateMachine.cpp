@@ -296,6 +296,17 @@ void StateMachine::startCapture(CaptureKind kind, int player, int action) {
         c.player = 1; // player 1 is on keyboard/mouse
 }
 
+void StateMachine::closeNow() {
+    currentState.capture.kind = CaptureKind::None;
+    handleClose();
+}
+
+void StateMachine::refreshProfileNames() {
+    std::vector<std::string> names;
+    for (auto& profile : Settings::Profiles()) names.push_back(profile.name);
+    currentState.menu.setControllerProfiles(names);
+}
+
 void StateMachine::cancelCapture() {
     if (!isCapturing()) return;
     currentState.capture.kind = CaptureKind::None;
@@ -325,6 +336,7 @@ void StateMachine::captureButton(int pad, int button) {
         case CaptureKind::Button: {
             std::lock_guard lock(Settings::Mutex());
             int profile = Settings::OwnProfile(c.player, ms);
+            refreshProfileNames(); // it may be a new copy
             auto& profiles = Settings::Profiles();
             if (profile >= 0 && profile < (int)profiles.size()) {
                 Settings::ProfileButton(profiles[profile].buttons, c.action) = (CGamepadMapping::eButton)button;
@@ -353,20 +365,18 @@ void StateMachine::refreshSubpage() {
             DWORD real = AlphaRing::Input::RealConnectedMask();
             for (int slot = 0; slot < 4 && slot < (int)option.subOptions.size(); ++slot) {
                 std::string label = k_controllerNames[slot];
-                if (const char* name = AlphaRing::Input::PlayStation::SlotName(slot))
-                    label += std::string(": ") + name;
+                std::string name = AlphaRing::Input::PlayStation::SlotName(slot);
+                if (!name.empty())
+                    label += ": " + name;
                 else if (!(real & (1u << slot)))
                     label += " (not connected)";
                 option.subOptions[slot].label = label;
             }
             break;
         }
-        case Menu::k_subProfile: {
-            std::vector<std::string> names;
-            for (auto& profile : Settings::Profiles()) names.push_back(profile.name);
-            currentState.menu.setControllerProfiles(names);
+        case Menu::k_subProfile:
+            refreshProfileNames();
             break;
-        }
         case Menu::k_subEditButtons: {
             int profile = ms.controllerProfile[player];
             auto& profiles = Settings::Profiles();
@@ -377,7 +387,7 @@ void StateMachine::refreshSubpage() {
                 std::string label = std::string(Settings::ProfileActionName(a)) + ": " + ButtonName(Settings::ProfileButton(buttons, a));
                 option.addOption(Option(label, OptionType::SubpageOption, Menu::k_subEditButtons));
             }
-            option.addOption(Option("Reset My Buttons", OptionType::SubpageOption, Menu::k_subEditButtons));
+            option.addOption(Option("Back to MCC Settings", OptionType::SubpageOption, Menu::k_subEditButtons));
             break;
         }
         case Menu::k_subLook: {
@@ -429,10 +439,8 @@ bool StateMachine::handleSubOptionStays() {
             if (index < Settings::k_profileActionCount) {
                 startCapture(CaptureKind::Button, player, index);
             } else {
-                std::lock_guard lock(Settings::Mutex());
-                int profile = Settings::OwnProfile(player, ms);
-                Settings::ResetProfile(profile);
-                Settings::Save();
+                // the player's own profile stays in the Controller Profile list
+                ms.controllerProfile[player] = -1;
                 refreshSubpage();
             }
             return true;

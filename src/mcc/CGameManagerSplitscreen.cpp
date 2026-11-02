@@ -225,7 +225,10 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
         // Escape when player 1 is on keyboard/mouse.
         static bool s_start_was_down[4];
         bool start = (p_device->state.Gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
-        if (index == 0 && others_hold_start(p_device->input_user)) {
+        bool menu_open = AlphaRing::Input::XboxMenuOpen();
+        if (menu_open) {
+            // nothing reaches the game, and no one pauses it behind the menu
+        } else if (index == 0 && others_hold_start(p_device->input_user)) {
             p_device->state.Gamepad.wButtons |= XINPUT_GAMEPAD_START;
             p_device->state.dwPacketNumber ^= 0x40000000;
         } else if (index > 0 && index < 4 && start && !s_start_was_down[index] && p_profile->b_player0_use_km &&

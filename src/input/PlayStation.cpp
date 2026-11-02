@@ -22,6 +22,8 @@ extern "C" {
 #include <thread>
 #include <vector>
 
+#include <tlhelp32.h>
+
 // Report layouts follow the Linux hid-playstation driver and SDL's HIDAPI
 // PS4/PS5 drivers.
 //
@@ -35,13 +37,13 @@ namespace AlphaRing::Input::PlayStation {
     namespace {
         constexpr USHORT k_sony = 0x054C;
 
-        struct Model { USHORT pid; bool dualsense; const char* name; };
+        struct Model { USHORT pid; bool dualsense; bool dongle; const char* name; };
         constexpr Model k_models[] = {
-            {0x05C4, false, "DualShock 4"},
-            {0x09CC, false, "DualShock 4"},
-            {0x0BA0, false, "DualShock 4 (wireless adapter)"},
-            {0x0CE6, true,  "DualSense"},
-            {0x0DF2, true,  "DualSense Edge"},
+            {0x05C4, false, false, "DualShock 4"},
+            {0x09CC, false, false, "DualShock 4"},
+            {0x0BA0, false, true,  "DualShock 4 (wireless adapter)"},
+            {0x0CE6, true,  false, "DualSense"},
+            {0x0DF2, true,  false, "DualSense Edge"},
         };
 
         // the PlayStation player colors, dimmed a little
@@ -72,6 +74,7 @@ namespace AlphaRing::Input::PlayStation {
             std::string name;
             HANDLE handle = INVALID_HANDLE_VALUE;
             bool dualsense = false;
+            bool dongle = false;     // Sony's wireless adapter: reports even with no controller synced
             bool bluetooth = false;
             bool writable = false;
             USHORT inputLength = 0;
@@ -94,7 +97,9 @@ namespace AlphaRing::Input::PlayStation {
         };
 
         SRWLOCK s_lock = SRWLOCK_INIT; // the devices' state and the slot table
-        std::vector<std::unique_ptr<Device>> s_devices;
+        // Never destroyed: at process exit a destructor of a std::thread
+        // still running (the manager's, a device's reader) would terminate MCC.
+        std::vector<std::unique_ptr<Device>>& s_devices = *new std::vector<std::unique_ptr<Device>>();
         Device* s_slots[4] = {};
         int s_slotPlayer[4] = {-1, -1, -1, -1};
         std::map<std::wstring, int> s_lastSlot; // where a controller was, to put it back there
@@ -102,7 +107,19 @@ namespace AlphaRing::Input::PlayStation {
         std::atomic<bool> s_enabled{true};
         std::atomic<bool> s_running{false};
         HANDLE s_rescan = nullptr;
-        std::thread s_manager;
+        std::thread* s_manager = nullptr; // never destroyed, as above
+        bool s_ds4windows = false;        // DS4Windows runs: it translates the controllers already
+
+        bool DS4WindowsRunning() {
+            HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snapshot == INVALID_HANDLE_VALUE) return false;
+            PROCESSENTRY32W entry{sizeof(PROCESSENTRY32W)};
+            bool found = false;
+            for (BOOL ok = Process32FirstW(snapshot, &entry); ok && !found; ok = Process32NextW(snapshot, &entry))
+                found = _wcsicmp(entry.szExeFile, L"DS4Windows.exe") == 0;
+            CloseHandle(snapshot);
+            return found;
+        }
 
         SHORT Axis(uint8_t value, bool invert) {
             int v = ((int)value - 128) * 256 + (value > 128 ? (value - 128) * 2 : 0);
@@ -157,6 +174,8 @@ namespace AlphaRing::Input::PlayStation {
             if (length < 11) return false;
             switch (report[0]) {
                 case 0x01:
+                    // the wireless adapter with no controller synced to it
+                    if (dev.dongle && length > 31 && (report[31] & 0x04)) return false;
                     if (dev.dualsense && !dev.bluetooth) {
                         Decode(report + 1, 7, 4, 5, pad, guide);       // DualSense, USB
                     } else {
@@ -357,6 +376,7 @@ namespace AlphaRing::Input::PlayStation {
             dev->path = path;
             dev->handle = handle;
             dev->dualsense = model->dualsense;
+            dev->dongle = model->dongle;
             // over Bluetooth the reports are longer than USB's 64 bytes
             dev->bluetooth = caps.InputReportByteLength > 64;
             dev->writable = writable;
@@ -430,7 +450,14 @@ namespace AlphaRing::Input::PlayStation {
         }
 
         void Refresh() {
-            bool enabled = s_enabled;
+            bool ds4windows = DS4WindowsRunning();
+            if (ds4windows != s_ds4windows) {
+                s_ds4windows = ds4windows;
+                LOG_INFO("PlayStation: DS4Windows {}", ds4windows ? "is running, leaving the controllers to it" : "closed");
+                if (ds4windows && s_enabled)
+                    Toast::Show("DS4Windows is running: PlayStation controllers are left to it");
+            }
+            bool enabled = s_enabled && !ds4windows;
             DWORD realMask = Input::RealConnectedMask();
 
             // drop the controllers that went away (or all, when turned off)
@@ -448,6 +475,7 @@ namespace AlphaRing::Input::PlayStation {
             ReleaseSRWLockExclusive(&s_lock);
             for (auto& dev : gone) {
                 if (enabled) Toast::Show("%s disconnected", dev->name.c_str());
+                else Toast::Show("%s released", dev->name.c_str());
                 CloseDevice(dev);
             }
             if (!enabled) return;
@@ -509,14 +537,14 @@ namespace AlphaRing::Input::PlayStation {
     void Start() {
         if (s_running.exchange(true)) return;
         s_rescan = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-        s_manager = std::thread(ManagerLoop);
+        s_manager = new std::thread(ManagerLoop);
     }
 
     void Stop() {
         if (!s_running.exchange(false)) return;
         SetEvent(s_rescan);
         // At process exit the loader may already have ended our threads.
-        if (s_manager.joinable()) s_manager.detach();
+        if (s_manager && s_manager->joinable()) s_manager->detach();
     }
 
     void SetEnabled(bool enabled) {
@@ -588,11 +616,11 @@ namespace AlphaRing::Input::PlayStation {
         ReleaseSRWLockExclusive(&s_lock);
     }
 
-    const char* SlotName(DWORD slot) {
-        if (slot >= 4) return nullptr;
+    std::string SlotName(DWORD slot) {
+        if (slot >= 4) return {};
         AcquireSRWLockShared(&s_lock);
-        const char* name = s_slots[slot] ? s_slots[slot]->name.c_str() : nullptr;
+        std::string name = s_slots[slot] ? s_slots[slot]->name : std::string();
         ReleaseSRWLockShared(&s_lock);
-        return name; // the device lives until the manager closes it, after unplugging
+        return name;
     }
 }

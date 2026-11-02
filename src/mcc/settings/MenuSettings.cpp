@@ -589,10 +589,10 @@ namespace AlphaRing::MenuSettings {
     bool Save() {
         std::lock_guard lock(s_mutex);
         EnsureLoaded();
-        if (s_unreadable) {
-            Publish();
+        // the change reaches the game whether or not the file can be written
+        Publish();
+        if (s_unreadable)
             return false;
-        }
 
         // Written next to the file and moved over it, so a crash mid-write
         // can't leave a truncated file behind.
@@ -644,7 +644,6 @@ namespace AlphaRing::MenuSettings {
 
             if (!ofs.good()) return false;
         }
-        Publish();
         if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             LOG_WARNING("MenuSettings: can't replace {} ({})", path, GetLastError());
             return false;
