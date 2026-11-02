@@ -391,6 +391,15 @@ void renderMenu(
                 continue;
             }
 
+            if (type == OptionType::Cycle && state.pageIndex > 0 && opt.subOptionType == Menu::k_cycleDeadzone) {
+                int deadzone = state.menuState.deadzone[state.pageIndex - 1];
+                std::string label = opt.label + ": " + (deadzone > 0 ? "+" + std::to_string(deadzone) + "%" : std::string("Off"));
+                drawButton(menuPosX, yBase, menuWidth, menuHeight, font, fontSize, state.optionIndex == i,
+                           globalAlpha, label.c_str(), type, 0);
+                buttonCount++;
+                continue;
+            }
+
             if (type == OptionType::Cycle && state.pageIndex > 0) {
                 int player = state.pageIndex - 1;
                 int value = opt.subOptionType == Menu::k_cycleLook   ? state.menuState.invert[player]

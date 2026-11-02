@@ -110,6 +110,7 @@ public:
     static constexpr int k_cycleLook = 0;
     static constexpr int k_cycleFlight = 1;
     static constexpr int k_cycleVibration = 2;
+    static constexpr int k_cycleDeadzone = 3;
 
     // subOptionType of an Action option
     static constexpr int k_actionAssignControllers = 0;
@@ -167,6 +168,7 @@ private:
         pages[index].addOption(Option("Look", OptionType::Cycle, k_cycleLook));
         pages[index].addOption(Option("Flying", OptionType::Cycle, k_cycleFlight));
         pages[index].addOption(Option("Vibration", OptionType::Cycle, k_cycleVibration));
+        pages[index].addOption(Option("Stick Deadzone", OptionType::Cycle, k_cycleDeadzone));
 
         pages[index].addOption(Option("Red Team", OptionType::TeamToggle, 0));
 

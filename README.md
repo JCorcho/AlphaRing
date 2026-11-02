@@ -79,6 +79,7 @@ Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**
 - **Controller Profile** - *MCC Settings* (the buttons from MCC's controller settings), the presets (Default, Southpaw, Boxer, Green Thumb, Bumper Jumper, Recon) or your own profiles.
 - **Edit My Buttons** - pick an action, then press the button you want for it on your controller. The first edit copies the preset into a profile of your own ("<name>'s Controls"), so the presets and the other player's controls never change. Actions not in the list (Sprint, vehicle and Forge controls...) keep MCC's buttons.
 - **Sensitivity** (`MCC` or 1-20), **Look** and **Flying** inversion, **Vibration** (MCC / Off / On).
+- **Stick Deadzone** - an extra deadzone (5-25%) for a drifting stick; the rest of the stick is rescaled so it still reaches full speed.
 - **Primary/Secondary/Tertiary Color** - a fixed color, or *From My Look / MCC*.
 - **Look & Armor** - per game:
   - *Copy My Look From MCC Now* (during a campaign mission or a match): this player takes the armor, colors and service tag currently set in MCC's Customize menu for that game.
@@ -88,7 +89,9 @@ Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**
 
 **Campaign:** everything above works the same in campaign missions as in multiplayer. What a game shows of a player's customization in co-op is up to that game (Reach shows the full Spartan armor; games with fixed characters, such as Halo 3's Arbiter and Elites, show less or nothing). For colors, *Copy My Look From MCC* is the most reliable way, as it takes MCC's exact values instead of the menu's 30-color table.
 
-**PlayStation controllers (no DS4Windows needed):** turn the controller on (USB or Bluetooth-paired in Windows) and it shows up as the next free controller, with rumble and its lightbar in the player's color (blue, red, green, pink). If a controller's buttons arrive twice, another program is also translating it: close DS4Windows, or disable Steam Input for MCC (MCC → Properties → Controller → *Disable Steam Input*), or turn **PlayStation Controllers** off to keep using those.
+**PlayStation controllers (no DS4Windows needed):** turn the controller on (USB or Bluetooth-paired in Windows) and it shows up as the next free controller, with rumble and its lightbar in the player's color (blue, red, green, pink). Each controller gets the same slot back every time (also after restarting MCC), so each player keeps their controller; the slots are remembered in `alpha_ring_controllers.cfg`. The battery level shows in the Controller list, and a notice warns below 20%. While DS4Windows runs, the controllers are left to it.
+
+**Checking a setup:** `F1` → Splitscreen → *Controller Test* shows every controller slot live (what kind of controller, which player has it, sticks, triggers and buttons) and what each player's settings last gave the game. If a controller's buttons arrive twice, another program is also translating it: close DS4Windows, or disable Steam Input for MCC (MCC → Properties → Controller → *Disable Steam Input*), or turn **PlayStation Controllers** off to keep using those.
 
 ---
 

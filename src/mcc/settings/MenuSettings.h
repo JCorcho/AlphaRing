@@ -90,6 +90,8 @@ namespace AlphaRing::MenuSettings {
     // laid over it. False if the player uses MCC's layout as it is.
     bool ComposeMapping(int player, const CGamepadMapping& base, CGamepadMapping& out);
     bool VibrationOff(int player); // the player turned rumble off here
+    int StickDeadzone(int player); // extra deadzone in percent, 0 = none
+    static constexpr int k_maxDeadzone = 40;
     bool AnyoneCanPause();
 
     // Controller profiles. The last profile can't be deleted, and players on a

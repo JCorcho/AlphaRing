@@ -1,5 +1,7 @@
 #include "CGameManager.h"
 
+#include <cmath>
+
 #include "common.h"
 
 #include "./mcc.h"
@@ -141,6 +143,22 @@ static void press_escape() {
     SendInput(2, inputs, sizeof(INPUT));
 }
 
+// An extra radial deadzone, rescaled so the stick still reaches full speed:
+// for a drifting stick. `percent` of full deflection.
+static void apply_deadzone(SHORT& x, SHORT& y, int percent) {
+    if (percent <= 0) return;
+    float dz = percent / 100.0f;
+    float fx = x / 32767.0f, fy = y / 32767.0f;
+    float magnitude = sqrtf(fx * fx + fy * fy);
+    if (magnitude <= dz) {
+        x = y = 0;
+        return;
+    }
+    float scale = (fminf(magnitude, 1.0f) - dz) / (1.0f - dz) / magnitude;
+    x = (SHORT)fmaxf(-32768.0f, fminf(32767.0f, fx * scale * 32767.0f));
+    y = (SHORT)fmaxf(-32768.0f, fminf(32767.0f, fy * scale * 32767.0f));
+}
+
 // Tells the players when a controller in the match drops out or comes back.
 static void track_connection(int index, bool connected) {
     static int s_state[4] = {-1, -1, -1, -1}; // -1 unknown, 0 gone, 1 there
@@ -216,6 +234,11 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
         if (index < 8 && p_device->state.Gamepad.wButtons != 0 && FirstThisMatch(s_press_seen[index]))
             MATCH_LOG("input player={} first press buttons={:#06x} (input_user={})", index,
                       p_device->state.Gamepad.wButtons, p_device->input_user);
+
+        if (int deadzone = AlphaRing::MenuSettings::StickDeadzone((int)index)) {
+            apply_deadzone(p_device->state.Gamepad.sThumbLX, p_device->state.Gamepad.sThumbLY, deadzone);
+            apply_deadzone(p_device->state.Gamepad.sThumbRX, p_device->state.Gamepad.sThumbRY, deadzone);
+        }
 
         // the Xbox menu is being driven with the controllers
         if (AlphaRing::Input::XboxMenuOpen())

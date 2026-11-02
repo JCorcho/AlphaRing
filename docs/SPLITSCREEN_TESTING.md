@@ -44,5 +44,8 @@ DLL is attached to the run.
 8. **Looks**: player 1 should now spawn in their MCC customization (not default green). For player 2: set MCC's Customize to their look, start a mission, F4 → Player 2 → *Look & Armor* → *Copy My Look From MCC Now*. If it doesn't show at once, reload the checkpoint. Then set MCC's customization back for player 1.
 9. **PlayStation controllers** (DS4Windows closed; Steam Input off for MCC): turn a DualSense/DualShock 4 on over Bluetooth: a "connected as Controller N" notice; it plays; rumble works; the lightbar shows the player's color. Turn it off mid-mission: "Player N's controller disconnected".
 10. **Disconnect notice** with an Xbox controller: unplug it mid-mission, plug it back in.
+11. **Controller Test** (F1 → Splitscreen → Controller Test): every controller shows its buttons live under the right slot and player; after a mission loads, "Last given to the game" lists each player's own sensitivity and colors.
+12. **Restart**: quit and relaunch MCC with the PlayStation controllers on: each comes back as the same Controller number (and player). The Controller list shows its battery.
+13. **Deadzone**: set *Stick Deadzone* to 15% for one player: small stick movements do nothing, full tilt still turns at full speed.
 
 If something fails, note the step and attach `alpha_ring_info.log` from that session.

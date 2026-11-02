@@ -203,6 +203,7 @@ namespace AlphaRing::MenuSettings {
             ms.invert[i] = -1;
             ms.invertFlight[i] = -1;
             ms.vibration[i] = -1;
+            ms.deadzone[i] = 0;
             ms.teamIndex[i] = i % 2;
             for (int& color : ms.playerColors[i].colors) color = -1;
         }
@@ -331,6 +332,7 @@ namespace AlphaRing::MenuSettings {
             kv[PlayerKey(i, "invert")] = ms.invert[i];
             kv[PlayerKey(i, "invertFlight")] = ms.invertFlight[i];
             kv[PlayerKey(i, "vibration")] = ms.vibration[i];
+            kv[PlayerKey(i, "deadzone")] = ms.deadzone[i];
             kv[PlayerKey(i, "controllerProfile")] = ms.controllerProfile[i]; // -1 doesn't fit the old block's readers
             for (int g = 0; g < k_gameCount; ++g)
                 for (int k = 0; k < (int)s_lookColors[i][g].size() && k < k_lookColorCount; ++k)
@@ -356,6 +358,7 @@ namespace AlphaRing::MenuSettings {
             ms.invert[i] = std::clamp(get(PlayerKey(i, "invert"), ms.invert[i]), -1, 1);
             ms.invertFlight[i] = std::clamp(get(PlayerKey(i, "invertFlight"), ms.invertFlight[i]), -1, 1);
             ms.vibration[i] = std::clamp(get(PlayerKey(i, "vibration"), ms.vibration[i]), -1, 1);
+            ms.deadzone[i] = std::clamp(get(PlayerKey(i, "deadzone"), ms.deadzone[i]), 0, k_maxDeadzone);
             ms.controllerProfile[i] = get(PlayerKey(i, "controllerProfile"), ms.controllerProfile[i]);
             for (int g = 0; g < k_gameCount; ++g) {
                 std::vector<int> colors(k_lookColorCount, -1);
@@ -664,6 +667,7 @@ namespace AlphaRing::MenuSettings {
         int invert;        // -1 = MCC's
         int invertFlight;
         int vibration;
+        int deadzone;      // percent
         int profile;       // -1 = MCC's layout
         ControllerProfileMapping buttons;
         int namedColor[3]; // AlphaRing colors, -1 = none
@@ -695,6 +699,7 @@ namespace AlphaRing::MenuSettings {
             p.invert = ms.invert[i];
             p.invertFlight = ms.invertFlight[i];
             p.vibration = ms.vibration[i];
+            p.deadzone = std::clamp(ms.deadzone[i], 0, k_maxDeadzone);
             p.profile = (ms.controllerProfile[i] >= 0 && ms.controllerProfile[i] < (int)s_profiles.size()) ? ms.controllerProfile[i] : -1;
             p.buttons = p.profile >= 0 ? s_profiles[p.profile].buttons : g_menuConfig.controllerProfiles[0];
             for (int c = 0; c < 3; ++c) p.namedColor[c] = ms.playerColors[i].colors[c];
@@ -739,6 +744,14 @@ namespace AlphaRing::MenuSettings {
     bool AnyoneCanPause() {
         AcquireSRWLockShared(&s_publishLock);
         bool result = s_published.valid && s_published.anyoneCanPause;
+        ReleaseSRWLockShared(&s_publishLock);
+        return result;
+    }
+
+    int StickDeadzone(int player) {
+        if (player < 0 || player >= 4) return 0;
+        AcquireSRWLockShared(&s_publishLock);
+        int result = s_published.valid ? s_published.players[player].deadzone : 0;
         ReleaseSRWLockShared(&s_publishLock);
         return result;
     }

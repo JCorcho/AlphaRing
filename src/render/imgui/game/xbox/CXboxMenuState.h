@@ -28,4 +28,5 @@ struct MenuState {
     int vibration[4];         // -1 = MCC's, 0 = off, 1 = on
     bool anyoneCanPause;      // Start on any player's controller pauses the game
     bool nativePlayStation;   // DualShock 4 / DualSense read directly (USB and Bluetooth)
+    int deadzone[4];          // extra stick deadzone in percent, 0 = none (for drifting sticks)
 };

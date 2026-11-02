@@ -44,6 +44,7 @@ namespace MCC::Splitscreen {
 #include "mcc/mcc.h"
 #include "input/Input.h"
 #include "mcc/settings/MenuSettings.h"
+#include "input/PlayStation.h"
 #include "render/imgui/game/xbox/assets/colors.h"
 
 #include <algorithm>
@@ -186,6 +187,13 @@ namespace MCC::Splitscreen {
         triState("Look", &ms.invert[index], "Normal", "Inverted");
         triState("Flying", &ms.invertFlight[index], "Normal", "Inverted");
         triState("Vibration", &ms.vibration[index], "Off", "On");
+
+        if (ImGui::SliderInt("Extra Stick Deadzone", &ms.deadzone[index], 0, Settings::k_maxDeadzone, ms.deadzone[index] ? "%d%%" : "Off"))
+            Settings::Publish();
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            Settings::Save();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("For a drifting stick: small movements are ignored, the rest is rescaled to keep full speed");
 
         const char* teams[] = {"Red Team", "Blue Team"};
         if (ImGui::Combo("Team", &ms.teamIndex[index], teams, IM_ARRAYSIZE(teams))) {
@@ -517,6 +525,85 @@ namespace MCC::Splitscreen {
         }
     }
 
+    // What each controller sends right now and who it belongs to, then what
+    // each player's profile last gave the game: for checking a setup.
+    static void ControllerTestContext() {
+        auto& ms = Settings::State();
+        DWORD real = AlphaRing::Input::RealConnectedMask();
+        static const struct { WORD bit; const char* name; } k_buttons[] = {
+            {XINPUT_GAMEPAD_A, "A"}, {XINPUT_GAMEPAD_B, "B"}, {XINPUT_GAMEPAD_X, "X"}, {XINPUT_GAMEPAD_Y, "Y"},
+            {XINPUT_GAMEPAD_LEFT_SHOULDER, "LB"}, {XINPUT_GAMEPAD_RIGHT_SHOULDER, "RB"},
+            {XINPUT_GAMEPAD_LEFT_THUMB, "LS"}, {XINPUT_GAMEPAD_RIGHT_THUMB, "RS"},
+            {XINPUT_GAMEPAD_START, "Start"}, {XINPUT_GAMEPAD_BACK, "Back"},
+            {XINPUT_GAMEPAD_DPAD_UP, "Up"}, {XINPUT_GAMEPAD_DPAD_DOWN, "Down"},
+            {XINPUT_GAMEPAD_DPAD_LEFT, "Left"}, {XINPUT_GAMEPAD_DPAD_RIGHT, "Right"},
+        };
+
+        if (ImGui::BeginTable("controllers", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableSetupColumn("Slot");
+            ImGui::TableSetupColumn("Controller");
+            ImGui::TableSetupColumn("Player");
+            ImGui::TableSetupColumn("Input now");
+            ImGui::TableHeadersRow();
+            for (int slot = 0; slot < 4; ++slot) {
+                XINPUT_STATE state;
+                bool connected = AlphaRing::Input::GetXInputGetState(slot, &state);
+                std::string ps = AlphaRing::Input::PlayStation::SlotName(slot);
+                std::string players;
+                for (int i = 0; i < ms.playerCount && i < 4; ++i) {
+                    if (i == 0 && ms.useKM) continue;
+                    if (ms.controllerIndex[i] == slot)
+                        players += (players.empty() ? "" : ", ") + std::string("Player ") + std::to_string(i + 1);
+                }
+                std::string pressed;
+                for (auto& b : k_buttons)
+                    if (state.Gamepad.wButtons & b.bit) pressed += std::string(b.name) + " ";
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", slot + 1);
+                ImGui::TableNextColumn();
+                if (!ps.empty())
+                    ImGui::TextUnformatted(ps.c_str());
+                else if (real & (1u << slot))
+                    ImGui::TextUnformatted("XInput (Xbox, or translated by Steam/DS4Windows)");
+                else
+                    ImGui::TextDisabled(connected ? "connected" : "none");
+                ImGui::TableNextColumn();
+                if (players.empty()) ImGui::TextDisabled("-");
+                else ImGui::TextUnformatted(players.c_str());
+                ImGui::TableNextColumn();
+                if (connected) {
+                    const auto& g = state.Gamepad;
+                    ImGui::Text("L %+.2f %+.2f  R %+.2f %+.2f  LT %3d RT %3d  %s",
+                                g.sThumbLX / 32767.0f, g.sThumbLY / 32767.0f, g.sThumbRX / 32767.0f, g.sThumbRY / 32767.0f,
+                                g.bLeftTrigger, g.bRightTrigger, pressed.c_str());
+                } else {
+                    ImGui::TextDisabled("-");
+                }
+            }
+            ImGui::EndTable();
+        }
+        if (ms.useKM)
+            ImGui::TextDisabled("Player 1 is on keyboard/mouse");
+
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Last given to the game (it asks when a mission/match loads and after settings change):");
+        auto& profiles = Settings::Profiles();
+        for (int i = 0; i < ms.playerCount && i < 4; ++i) {
+            auto profile = CGameManager::get_profile(i);
+            if (!profile) continue;
+            const auto& p = profile->profile;
+            int layout = ms.controllerProfile[i];
+            const char* layoutName = (layout >= 0 && layout < (int)profiles.size()) ? profiles[layout].name.c_str() : "MCC Settings";
+            ImGui::BulletText("Player %d: sensitivity %d/%d, look %s, flying %s, vibration %s, colors %d/%d/%d, buttons \"%s\", deadzone %d%%",
+                              i + 1, p.HorizontalLookSensitivity, p.VerticalLookSensitivity,
+                              p.LookControlsInverted ? "inverted" : "normal", p.AircraftControlsInverted ? "inverted" : "normal",
+                              p.VibrationDisabled ? "off" : "on", p.PlayerModelPrimaryColorIndex, p.PlayerModelSecondaryColorIndex,
+                              p.PlayerModelTertiaryColorIndex, layoutName, ms.deadzone[i]);
+        }
+    }
+
     void RealContext() {
         char buffer[10];
         auto p_setting = AlphaRing::Global::MCC::Splitscreen();
@@ -568,6 +655,12 @@ namespace MCC::Splitscreen {
             ms.playerCount = player_count;
             Settings::ApplySplitscreen(false);
             Settings::Save();
+        }
+
+        if (ImGui::CollapsingHeader("Controller Test")) {
+            ImGui::Indent();
+            ControllerTestContext();
+            ImGui::Unindent();
         }
 
         if (ImGui::BeginTabBar("Players")) {

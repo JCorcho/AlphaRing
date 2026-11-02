@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "log/Log.h"
+#include "filesystem/Filesystem.h"
 #include "render/imgui/Toast.h"
 
 #include <Windows.h>
@@ -16,6 +17,7 @@ extern "C" {
 #include <cstdint>
 #include <cstring>
 #include <cwctype>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
@@ -89,6 +91,9 @@ namespace AlphaRing::Input::PlayStation {
             bool guide = false;
             DWORD packet = 0;
             bool hasReport = false;
+            int battery = -1;        // percent, -1 unknown
+            bool charging = false;
+            bool lowWarned = false;
             uint8_t rumbleLow = 0, rumbleHigh = 0;
             int player = -1;
             bool outputDirty = true;
@@ -102,7 +107,46 @@ namespace AlphaRing::Input::PlayStation {
         std::vector<std::unique_ptr<Device>>& s_devices = *new std::vector<std::unique_ptr<Device>>();
         Device* s_slots[4] = {};
         int s_slotPlayer[4] = {-1, -1, -1, -1};
-        std::map<std::wstring, int> s_lastSlot; // where a controller was, to put it back there
+        // Where each controller was (by device path: a Bluetooth path holds the
+        // controller's address), to put it back there, also after a restart,
+        // so each player keeps their controller. Saved next to the DLL.
+        std::map<std::wstring, int> s_lastSlot;
+        bool s_lastSlotDirty = false;
+
+        const std::string& SlotFile() {
+            static std::string path = AlphaRing::Filesystem::ModuleFile("alpha_ring_controllers.cfg");
+            return path;
+        }
+
+        std::string Utf8(const std::wstring& text) {
+            int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            std::string result(size > 0 ? size - 1 : 0, '\0');
+            if (size > 1) WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, result.data(), size, nullptr, nullptr);
+            return result;
+        }
+
+        std::wstring Wide(const std::string& text) {
+            int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+            std::wstring result(size > 0 ? size - 1 : 0, L'\0');
+            if (size > 1) MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, result.data(), size);
+            return result;
+        }
+
+        // "<slot> <path>" per line
+        void LoadSlots() {
+            std::ifstream file(SlotFile());
+            std::string line;
+            while (std::getline(file, line)) {
+                if (line.size() < 3 || line[0] < '0' || line[0] > '3' || line[1] != ' ') continue;
+                s_lastSlot[Wide(line.substr(2))] = line[0] - '0';
+            }
+        }
+
+        void SaveSlots(const std::map<std::wstring, int>& slots) {
+            std::ofstream file(SlotFile(), std::ios::trunc);
+            for (auto& [path, slot] : slots)
+                file << slot << ' ' << Utf8(path) << '\n';
+        }
 
         std::atomic<bool> s_enabled{true};
         std::atomic<bool> s_running{false};
@@ -170,7 +214,29 @@ namespace AlphaRing::Input::PlayStation {
             guide = (b2 & 0x01) != 0;                          // PS
         }
 
-        bool Parse(Device& dev, const uint8_t* report, DWORD length, XINPUT_GAMEPAD& pad, bool& guide) {
+        // Battery from a full report's status byte. DualShock 4 (data[29]):
+        // level 0-10 (11 = full on the cable), bit 4 = on the cable.
+        // DualSense (data[52]): level 0-10, high nibble 0 = on battery, 1 =
+        // charging, 2 = full.
+        void BatteryDS4(const uint8_t* data, int& battery, bool& charging) {
+            uint8_t status = data[29];
+            int level = status & 0x0F;
+            charging = (status & 0x10) && level < 11;
+            battery = level >= 10 ? 100 : level * 10 + 5;
+        }
+
+        void BatteryDualSense(const uint8_t* data, int& battery, bool& charging) {
+            uint8_t status = data[52];
+            int level = status & 0x0F;
+            charging = (status >> 4) == 1;
+            battery = (status >> 4) == 2 ? 100 : (std::min)(level * 10 + 5, 100);
+        }
+
+        // battery stays -1 when the report has none (the Bluetooth "simple" ones)
+        bool Parse(Device& dev, const uint8_t* report, DWORD length, XINPUT_GAMEPAD& pad, bool& guide,
+                   int& battery, bool& charging) {
+            battery = -1;
+            charging = false;
             if (length < 11) return false;
             switch (report[0]) {
                 case 0x01:
@@ -178,17 +244,21 @@ namespace AlphaRing::Input::PlayStation {
                     if (dev.dongle && length > 31 && (report[31] & 0x04)) return false;
                     if (dev.dualsense && !dev.bluetooth) {
                         Decode(report + 1, 7, 4, 5, pad, guide);       // DualSense, USB
+                        if (length > 53) BatteryDualSense(report + 1, battery, charging);
                     } else {
                         Decode(report + 1, 4, 7, 8, pad, guide);       // DualShock 4, or DualSense Bluetooth "simple"
+                        if (!dev.bluetooth && length > 30) BatteryDS4(report + 1, battery, charging);
                     }
                     return true;
                 case 0x11:
                     if (dev.dualsense || length < 13) return false;
                     Decode(report + 3, 4, 7, 8, pad, guide);           // DualShock 4, Bluetooth
+                    if (length > 32) BatteryDS4(report + 3, battery, charging);
                     return true;
                 case 0x31:
                     if (!dev.dualsense || length < 13) return false;
                     Decode(report + 2, 7, 4, 5, pad, guide);           // DualSense, Bluetooth
+                    if (length > 54) BatteryDualSense(report + 2, battery, charging);
                     return true;
                 default:
                     return false;
@@ -311,16 +381,33 @@ namespace AlphaRing::Input::PlayStation {
                 }
                 XINPUT_GAMEPAD pad{};
                 bool guide = false;
-                if (!Parse(*dev, buffer.data(), read, pad, guide))
+                int battery;
+                bool charging;
+                if (!Parse(*dev, buffer.data(), read, pad, guide, battery, charging))
                     continue;
                 lastReport = GetTickCount64();
+                bool warnLow = false;
                 AcquireSRWLockExclusive(&s_lock);
                 if (!dev->hasReport || memcmp(&pad, &dev->pad, sizeof(pad)) != 0 || guide != dev->guide)
                     ++dev->packet;
                 dev->pad = pad;
                 dev->guide = guide;
                 dev->hasReport = true;
+                if (battery >= 0) {
+                    dev->battery = battery;
+                    dev->charging = charging;
+                    // once per discharge below 20%
+                    if (!charging && battery < 20 && !dev->lowWarned) {
+                        dev->lowWarned = true;
+                        warnLow = true;
+                    } else if (charging || battery >= 30) {
+                        dev->lowWarned = false;
+                    }
+                }
+                int slot = dev->slot;
                 ReleaseSRWLockExclusive(&s_lock);
+                if (warnLow)
+                    Toast::Show("%s (Controller %d): battery low", dev->name.c_str(), slot + 1);
             }
 
             CancelIoEx(dev->handle, nullptr);
@@ -431,7 +518,11 @@ namespace AlphaRing::Input::PlayStation {
             dev->slot = slot;
             if (slot >= 0) {
                 s_slots[slot] = dev;
-                s_lastSlot[dev->path] = slot;
+                auto last = s_lastSlot.find(dev->path);
+                if (last == s_lastSlot.end() || last->second != slot) {
+                    s_lastSlot[dev->path] = slot;
+                    s_lastSlotDirty = true;
+                }
                 dev->player = s_slotPlayer[slot];
             } else {
                 dev->player = -1;
@@ -520,8 +611,17 @@ namespace AlphaRing::Input::PlayStation {
         }
 
         void ManagerLoop() {
+            AcquireSRWLockExclusive(&s_lock);
+            LoadSlots();
+            ReleaseSRWLockExclusive(&s_lock);
             while (s_running) {
                 Refresh();
+                AcquireSRWLockExclusive(&s_lock);
+                bool dirty = s_lastSlotDirty;
+                s_lastSlotDirty = false;
+                auto slots = s_lastSlot;
+                ReleaseSRWLockExclusive(&s_lock);
+                if (dirty) SaveSlots(slots);
                 // a controller arriving sends WM_DEVICECHANGE (RequestRescan); this is the fallback
                 WaitForSingleObject(s_rescan, 10000);
             }
@@ -619,7 +719,12 @@ namespace AlphaRing::Input::PlayStation {
     std::string SlotName(DWORD slot) {
         if (slot >= 4) return {};
         AcquireSRWLockShared(&s_lock);
-        std::string name = s_slots[slot] ? s_slots[slot]->name : std::string();
+        std::string name;
+        if (Device* dev = s_slots[slot]) {
+            name = dev->name;
+            if (dev->battery >= 0)
+                name += ", " + std::to_string(dev->battery) + "%" + (dev->charging ? " charging" : "");
+        }
         ReleaseSRWLockShared(&s_lock);
         return name;
     }

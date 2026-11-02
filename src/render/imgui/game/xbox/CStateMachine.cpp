@@ -527,7 +527,10 @@ void StateMachine::handleOption() {
             }
             break;
         case OptionType::Cycle:
-            if (player >= 0) {
+            if (player >= 0 && opt.subOptionType == Menu::k_cycleDeadzone) {
+                // off, 5, 10 ... 25, off: for a drifting stick
+                ms.deadzone[player] = ms.deadzone[player] >= 25 ? 0 : ms.deadzone[player] + 5;
+            } else if (player >= 0) {
                 int* value = opt.subOptionType == Menu::k_cycleLook   ? &ms.invert[player]
                            : opt.subOptionType == Menu::k_cycleFlight ? &ms.invertFlight[player]
                                                                       : &ms.vibration[player];
