@@ -56,7 +56,7 @@ static const char* const k_table[kColorCount][7] = {
     // {"H4_Color15_Blue",     "HR_Color_Blue",     "H3_COLOR18_BLUE",     "ODST_COLOR_BLUE",     "H2_Color_12", "H2A_Color_16", "H1_Color_4"},
     {"H1_Color_4", "H2_Color_12", "H3_COLOR18_BLUE", "H4_Color15_Blue", "H2A_Color_16",  "ODST_COLOR_BLUE",  "HR_Color_Blue"},
     // 16 Cobalt
-    {"H4_Color16_Cobalt",   "HR_Color_Cobalt",   "H3_COLOR19_COBALT",   "ODST_COLOR_COBALT",   "H2_Color_11", "H2A_Color_17", "H1_Color_11"},
+    {"H1_Color_11", "H2_Color_11", "H3_COLOR19_COBALT", "H4_Color16_Cobalt", "H2A_Color_17",  "ODST_COLOR_COBALT",  "HR_Color_Cobalt"},
     // 17 Ice
     // {"H4_Color17_Ice",      "HR_Color_Ice",      "H3_COLOR20_SAPHIRE",  "ODST_COLOR_ICE",      "H2_Color_11", "H2A_Color_18", "H1_Color_11"},
     {"H1_Color_11", "H2_Color_11", "H3_COLOR20_SAPHIRE", "H4_Color17_Ice", "H2A_Color_18",  "ODST_COLOR_ICE",  "HR_Color_Ice"},

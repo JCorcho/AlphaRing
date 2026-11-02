@@ -30,6 +30,9 @@ namespace AlphaRing::MenuSettings {
     const char* ArmorGameName(int game);       // "Halo 2A", ...
     int ArmorItemGame(int game);               // its CUserProfile::eItemGame
     int CurrentArmorGame();                    // the running game's, or -1 (CE, Halo 2, ODST, none)
+    int ArmorGameOf(int game);                 // a CGameGlobal::eGame's, or -1
+    int GameOfArmorGame(int armorGame);        // its CGameGlobal::eGame
+    int CurrentGame();                         // the running CGameGlobal::eGame, or -1
 
     // One game's armor: one value per armor field (ArmorValueIndex), then the
     // four ServiceTag characters. A field below 0 is unset and keeps the
@@ -39,6 +42,7 @@ namespace AlphaRing::MenuSettings {
         std::vector<int> values;
         std::string playerName; // UTF-8 username of the player it was saved from
         int game = ArmorReach;  // the ArmorGame it belongs to
+        std::vector<int> colors = std::vector<int>(6, -1); // copied MCC colors (LookColors layout)
     };
 
     std::recursive_mutex& Mutex();
@@ -54,9 +58,13 @@ namespace AlphaRing::MenuSettings {
 
     bool Save();
 
-    // Pushing the menu state into the player profiles. Changes still need a
+    // Pushing the menu state to the game. The players' profiles and button
+    // layouts aren't written here: the game hooks build them from the MCC
+    // profile each time the game asks (ComposeProfile/ComposeMapping), from a
+    // copy of the settings these functions publish. Changes still need a
     // GameEngine()->load_setting() to reach a running game.
-    void ApplyControllerProfile(int profileIndex, CGamepadMapping& mapping);
+    void Publish(); // the copy the game hooks read; every Apply* below publishes
+    void ApplyControllerProfile(int profileIndex, CGamepadMapping& mapping); // the profile's actions over `mapping`
     bool IsProfileAction(int action); // set by ApplyControllerProfile
     void ApplyPlayerControls(int player); // controller slot, look inversion, look sensitivity
     void ApplyPlayerMapping(int player);  // the player's controller profile
@@ -72,12 +80,30 @@ namespace AlphaRing::MenuSettings {
     // never from a null previousTeams (game start). Other games get them all.
     void ApplyAll(bool atGameStart, const int* previousTeams = nullptr);
 
+    // ---- read by the game hooks: never take Mutex(), safe on any thread
+
+    // `out` = `base` (the MCC profile for the running game, CGameGlobal::eGame
+    // `game`) with `player`'s controls and look laid over it. False if the
+    // player changes nothing, `out` then being a copy of `base`.
+    bool ComposeProfile(int player, const CUserProfile& base, CUserProfile& out, int game);
+    // `out` = `base` (MCC's button layout) with `player`'s controller profile
+    // laid over it. False if the player uses MCC's layout as it is.
+    bool ComposeMapping(int player, const CGamepadMapping& base, CGamepadMapping& out);
+    bool VibrationOff(int player); // the player turned rumble off here
+    bool AnyoneCanPause();
+
     // Controller profiles. The last profile can't be deleted, and players on a
     // deleted profile fall back to the first one.
     static constexpr int k_profileActionCount = 14;
     const char* ProfileActionName(int action);
     CGamepadMapping::eButton& ProfileButton(ControllerProfileMapping& buttons, int action);
     int AddProfile(const std::string& name, const ControllerProfileMapping& buttons);
+    // The profile `player` uses in `ms`, made theirs alone first: a built-in
+    // profile, one another player uses, or MCC's layout (-1) is copied to a
+    // new "<name>'s Controls" profile that `ms` then gives the player. Its index.
+    int OwnProfile(int player, MenuState& ms);
+    // The buttons a player on MCC's layout has now (from the running game, else Default's).
+    ControllerProfileMapping MccButtons();
     void DeleteProfile(int index);
     void ReapplyProfile(int index); // to every player using it
     // Back to the buttons it started with: its built-in profile's (including
@@ -96,6 +122,17 @@ namespace AlphaRing::MenuSettings {
     void ClearArmor(int player, int game);
     void ApplyArmor(int player, CUserProfile& profile); // the running game's set fields
 
+    // A player's look: per game, the armor above plus colors copied from MCC
+    // (the six PlayerModel*Color fields, -1 = unset; CGameGlobal::eGame `game`).
+    std::vector<int>& LookColors(int player, int game);
+    // Copies the MCC profile's look for the running game (armor, service tag,
+    // colors) into `player`'s look, and clears the colors picked for them in
+    // the menus (in `ms`, or the shared state for null) so the copy shows.
+    // False if no game is running.
+    bool CaptureLook(int player, MenuState* ms = nullptr);
+    // Drops `player`'s look for the running game, or every game when none runs.
+    void ClearLook(int player, MenuState* ms = nullptr);
+    bool HasLook(int player); // anything set for the running game
     // Takes the four players' names from their profiles, then writes
     // everything to the file. Called when either menu closes; loading the
     // file puts the names back.
@@ -104,7 +141,8 @@ namespace AlphaRing::MenuSettings {
     // Characters. Saving under an existing name replaces that record.
     std::string CharacterName(const wchar_t* playerName); // "{PlayerName}'s Character"
     // A player's armor for `game`, saved as a character of that game.
-    int SaveCharacter(const std::string& name, int game, const std::vector<int>& armor, const wchar_t* playerName);
+    int SaveCharacter(const std::string& name, int game, const std::vector<int>& armor, const wchar_t* playerName,
+                      const std::vector<int>* colors = nullptr);
     // Makes the character the player's armor for its game, and writes the
     // saved username into `playerName` (a buffer of `playerNameSize`
     // characters) when the record has one.

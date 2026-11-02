@@ -4,6 +4,7 @@
 #include "mcc/mcc.h"
 #include "mcc/settings/MenuSettings.h"
 #include "log/MatchLog.h"
+#include "input/Input.h"
 
 #include <cstdio>
 #include <guiddef.h>
@@ -78,6 +79,7 @@ CGameManager::FunctionTable CGameManager::ppOriginal;
 
 bool CGameManager::Initialize(CGameManager* mng) {
     pGameManager = mng;
+    AlphaRing::Input::SetPadFilter(&CGameManager::filter_pad);
     return AlphaRing::Hook::Detour({
         {pGameManager->table->get_player_profile, get_player_profile, (void**)&ppOriginal.get_player_profile},
         {pGameManager->table->get_key_state, get_key_state, (void**)&ppOriginal.get_key_state},
@@ -131,6 +133,8 @@ void CGameManager::set_state(CGameManager *self, eState state) {
     static std::atomic<int> s_last_state{-1};
     if (s_last_state.exchange((int)state) != (int)state)
         MATCH_LOG("set_state {} (caller {})", (int)state, AlphaRing::MatchLog::Describe(_ReturnAddress()));
+    if (state == Exit || state == Exiting)
+        set_match_active(false);
     return ppOriginal.set_state(self, state);
 }
 
@@ -143,6 +147,9 @@ static void log_match_settings(const char* when) {
               MCC::IsInGame());
 }
 
+// A snapshot of the MCC profile and layout in every player's copy. The game
+// hooks rebuild those copies whenever the game asks for them, so this only
+// keeps the advanced menu's views current between asks.
 void CGameManager::apply_profiles() {
     auto p_mng = GameManager();
     if (!MCC::IsInGame() || !p_mng)
@@ -241,6 +248,7 @@ void *CGameManager::game_restart(CGameManager *self, int type, const char *reaso
     MATCH_LOG("game_restart enter: type={} reason=\"{}\" (caller {})", type, reason ? reason : "<null>",
               AlphaRing::MatchLog::Describe(_ReturnAddress()));
     log_match_settings("game_restart before");
+    set_match_active(true);
     auto result = ppOriginal.game_restart(self, type, reason);
     if (!ShouldThrottleApply()) {
         apply_profiles();
@@ -256,6 +264,7 @@ char __fastcall CGameManager::game_setup(CGameManager* self, void* a2) {
     AlphaRing::MatchLog::NewMatch();
     MATCH_LOG("game_setup enter (caller {})", AlphaRing::MatchLog::Describe(_ReturnAddress()));
     log_match_settings("game_setup before");
+    set_match_active(true);
     char result = ppOriginal.game_setup(self, a2);
     MATCH_LOG("game_setup original returned {}", (int)result);
     if (!ShouldThrottleApply()) {

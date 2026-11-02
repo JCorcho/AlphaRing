@@ -35,6 +35,12 @@
         static Profile_t* get_profile(int index);
         static CInputDevice* get_controller(int index);
         static void apply_profiles();
+        // A match is being set up or is running (set from game_setup/game_restart
+        // until MCC exits it), or MCC says one is.
+        static bool in_match();
+        static void set_match_active(bool active);
+        // "Anyone Can Pause" on MCC's own XInputGetState reads of player 1's controller.
+        static void filter_pad(DWORD slot, XINPUT_STATE* state);
 
     private:
         static void __fastcall set_vibration(CGameManager* self, DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);

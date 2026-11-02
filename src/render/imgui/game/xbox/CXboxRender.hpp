@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <optional>
 #include <cmath>
+#include <string>
+
+#include "mcc/settings/MenuSettings.h"
 
 // The chosen subpage entry's label. The value comes from the shared settings,
 // which the advanced menu edits too, so it may point past the entries.
@@ -25,7 +28,7 @@ static const char* subOptionLabel(const Option& opt, int index) {
 void renderMenu(
     int WINDOW_WIDTH,
     int WINDOW_HEIGHT,
-    State state,
+    const State& state,
     ImFont* font
 ) {
     float alpha = (std::min)(state.time / state.duration, 1.0f);
@@ -339,6 +342,8 @@ void renderMenu(
                 int displayValue = (state.pageIndex == 0)
                     ? state.menuState.playerCount
                     : state.menuState.sensitivity[state.pageIndex - 1];
+                // a player's sensitivity 0 is MCC's own
+                std::string displayText = (state.pageIndex != 0 && displayValue <= 0) ? "MCC" : std::to_string(displayValue);
 
                 drawButton(
                     menuPosX + groupIndex * (menuWidth / 3),
@@ -349,7 +354,7 @@ void renderMenu(
                     fontSize,
                     state.optionIndex == i,
                     globalAlpha,
-                    std::to_string(displayValue).c_str(),
+                    displayText.c_str(),
                     type,
                     0
                 );
@@ -361,11 +366,13 @@ void renderMenu(
             }
 
             if (type == OptionType::Boolean) {
-                bool boolValue = (state.pageIndex != 0)
-                    ? state.menuState.invert[state.pageIndex - 1]
-                    : (opt.subOptionType == Menu::k_usePlayer0ProfileOption)
-                        ? state.menuState.usePlayer0Profile
-                        : state.menuState.useKM;
+                bool boolValue = false;
+                switch (opt.subOptionType) {
+                    case Menu::k_useKMOption:             boolValue = state.menuState.useKM; break;
+                    case Menu::k_usePlayer0ProfileOption: boolValue = state.menuState.usePlayer0Profile; break;
+                    case Menu::k_anyoneCanPauseOption:    boolValue = state.menuState.anyoneCanPause; break;
+                    case Menu::k_nativePlayStationOption: boolValue = state.menuState.nativePlayStation; break;
+                }
 
                 drawButton(
                     menuPosX,
@@ -380,6 +387,25 @@ void renderMenu(
                     type,
                     boolValue ? 1 : 0
                 );
+                buttonCount++;
+                continue;
+            }
+
+            if (type == OptionType::Cycle && state.pageIndex > 0) {
+                int player = state.pageIndex - 1;
+                int value = opt.subOptionType == Menu::k_cycleLook   ? state.menuState.invert[player]
+                          : opt.subOptionType == Menu::k_cycleFlight ? state.menuState.invertFlight[player]
+                                                                     : state.menuState.vibration[player];
+                const char* text;
+                if (value < 0)
+                    text = "MCC Setting";
+                else if (opt.subOptionType == Menu::k_cycleVibration)
+                    text = value ? "On" : "Off";
+                else
+                    text = value ? "Inverted" : "Normal";
+                std::string label = opt.label + ": " + text;
+                drawButton(menuPosX, yBase, menuWidth, menuHeight, font, fontSize, state.optionIndex == i,
+                           globalAlpha, label.c_str(), type, 0);
                 buttonCount++;
                 continue;
             }
@@ -466,8 +492,16 @@ void renderMenu(
                     case 2:
                     case 3:
                     colorIndex = state.menuState.playerColors[state.pageIndex - 1].colors[state.menu.pages[state.pageIndex].options[i].subOptionType - 1];
+                    if (colorIndex < 0 || colorIndex >= 30) {
+                        // none picked: the player's look (or MCC's) decides
+                        std::string label = opt.label + ": My Look";
+                        drawButton(menuPosX, yBase, menuWidth, menuHeight, font, fontSize, state.optionIndex == i,
+                                   globalAlpha, label.c_str(), type, 0);
+                        break;
+                    }
                     color = defaultColors[colorIndex];
-                    finalColor = IM_COL32(GetRValue(color), GetGValue(color), GetBValue(color), globalAlpha);
+                    finalColor = IM_COL32((color >> IM_COL32_R_SHIFT) & 0xFF, (color >> IM_COL32_G_SHIFT) & 0xFF,
+                                          (color >> IM_COL32_B_SHIFT) & 0xFF, globalAlpha);
                     drawButton(
                         menuPosX,
                         yBase,
@@ -485,7 +519,8 @@ void renderMenu(
                     break;
                     case 4:
                     {
-                        std::string stringLabel = std::string("Controller Profile: ") + subOptionLabel(opt, state.menuState.controllerProfile[state.pageIndex - 1]);
+                        // entry 0 is MCC's layout (profile -1)
+                        std::string stringLabel = std::string("Controller Profile: ") + subOptionLabel(opt, state.menuState.controllerProfile[state.pageIndex - 1] + 1);
                         drawButton(
                             menuPosX,
                             yBase,
@@ -502,6 +537,8 @@ void renderMenu(
                     }
                     break;
                     default:
+                    drawButton(menuPosX, yBase, menuWidth, menuHeight, font, fontSize, state.optionIndex == i,
+                               globalAlpha, opt.label.c_str(), type, 0);
                     break;
                 }
                 buttonCount++;
@@ -574,4 +611,40 @@ void renderMenu(
         }
         draw->PopClipRect();
     }
+}
+
+// While the menu waits for a button: who has to press what.
+inline void renderCapturePrompt(int WINDOW_WIDTH, int WINDOW_HEIGHT, const State& state, ImFont* font) {
+    const auto& c = state.capture;
+    if (c.kind == CaptureKind::None) return;
+
+    std::string title, detail;
+    switch (c.kind) {
+        case CaptureKind::Controller:
+        case CaptureKind::AllControllers:
+            title = "Player " + std::to_string(c.player + 1);
+            detail = "Press any button on your controller";
+            break;
+        case CaptureKind::Button:
+            title = std::string(AlphaRing::MenuSettings::ProfileActionName(c.action));
+            detail = c.pad >= 0 ? "Player " + std::to_string(c.player + 1) + ": press the button for it"
+                                : "Press the button for it";
+            break;
+        default:
+            break;
+    }
+    int secondsLeft = (int)(10.0f - c.time + 0.99f);
+    std::string hint = "Esc to cancel  (" + std::to_string(secondsLeft < 0 ? 0 : secondsLeft) + ")";
+
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    float w = WINDOW_WIDTH * 0.42f, h = WINDOW_HEIGHT * 0.22f;
+    float x = (WINDOW_WIDTH - w) * 0.5f, y = (WINDOW_HEIGHT - h) * 0.5f;
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2((float)WINDOW_WIDTH, (float)WINDOW_HEIGHT), IM_COL32(0, 0, 0, 120));
+    draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), IM_COL32(245, 245, 245, 250), 8.0f);
+    draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h * 0.32f), IM_COL32(9, 117, 6, 255), 8.0f, ImDrawFlags_RoundCornersTop);
+    float big = 25.0f + ((WINDOW_HEIGHT / 1080.0f) * 10.0f);
+    float small = 20.0f + ((WINDOW_HEIGHT / 1080.0f) * 4.0f);
+    drawText((int)x, (int)y, (int)w, (int)(h * 0.32f), font, big, IM_COL32(255, 255, 255, 255), title.c_str());
+    drawText((int)x, (int)(y + h * 0.32f), (int)w, (int)(h * 0.40f), font, big, IM_COL32(0, 0, 0, 255), detail.c_str());
+    drawText((int)x, (int)(y + h * 0.70f), (int)w, (int)(h * 0.28f), font, small, IM_COL32(90, 90, 90, 255), hint.c_str());
 }

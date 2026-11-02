@@ -101,9 +101,15 @@ namespace MCC::Splitscreen {
 
     static bool ProfileCombo(const char* label, int* index) {
         auto& profiles = Settings::Profiles();
-        const char* preview = (*index >= 0 && *index < (int)profiles.size()) ? profiles[*index].name.c_str() : "";
+        const char* preview = (*index >= 0 && *index < (int)profiles.size()) ? profiles[*index].name.c_str() : "MCC Settings";
         bool changed = false;
         if (ImGui::BeginCombo(label, preview)) {
+            if (ImGui::Selectable("MCC Settings", *index < 0)) {
+                *index = -1;
+                changed = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The buttons set in MCC's own controller settings");
             for (int i = 0; i < (int)profiles.size(); ++i) {
                 ImGui::PushID(i);
                 if (ImGui::Selectable(profiles[i].name.c_str(), *index == i)) {
@@ -119,11 +125,17 @@ namespace MCC::Splitscreen {
 
     static bool ColorCombo(const char* label, int* color) {
         bool changed = false;
+        bool picked = *color >= 0 && *color < IM_ARRAYSIZE(k_colorNames);
         ImGui::PushID(label);
-        ImGui::ColorButton("##swatch", ImGui::ColorConvertU32ToFloat4(defaultColors[*color]), ImGuiColorEditFlags_NoTooltip);
+        ImGui::ColorButton("##swatch", picked ? ImGui::ColorConvertU32ToFloat4(defaultColors[*color]) : ImVec4(0, 0, 0, 0),
+                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_AlphaPreview);
         ImGui::PopID();
         ImGui::SameLine();
-        if (ImGui::BeginCombo(label, k_colorNames[*color])) {
+        if (ImGui::BeginCombo(label, picked ? k_colorNames[*color] : "From my look / MCC")) {
+            if (ImGui::Selectable("From my look / MCC", !picked)) {
+                *color = -1;
+                changed = true;
+            }
             for (int c = 0; c < IM_ARRAYSIZE(k_colorNames); ++c) {
                 ImGui::PushID(c);
                 ImGui::ColorButton("##swatch", ImGui::ColorConvertU32ToFloat4(defaultColors[c]), ImGuiColorEditFlags_NoTooltip);
@@ -151,18 +163,29 @@ namespace MCC::Splitscreen {
             Settings::Save();
         }
 
-        if (ImGui::SliderInt("Look Sensitivity", &ms.sensitivity[index], 1, 20)) {
+        if (ImGui::SliderInt("Look Sensitivity", &ms.sensitivity[index], 0, 20, ms.sensitivity[index] <= 0 ? "MCC" : "%d")) {
             Settings::ApplyPlayerControls(index);
             ReloadSettings();
         }
         if (ImGui::IsItemDeactivatedAfterEdit())
             Settings::Save();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("0 = the sensitivity set in MCC");
 
-        if (ImGui::Checkbox("Inverted Look", &ms.invert[index])) {
-            Settings::ApplyPlayerControls(index);
-            ReloadSettings();
-            Settings::Save();
-        }
+        // -1 = MCC's setting
+        auto triState = [&](const char* label, int* value, const char* off, const char* on) {
+            const char* items[] = {"MCC Setting", off, on};
+            int selected = *value + 1;
+            if (ImGui::Combo(label, &selected, items, IM_ARRAYSIZE(items))) {
+                *value = selected - 1;
+                Settings::ApplyPlayerControls(index);
+                ReloadSettings();
+                Settings::Save();
+            }
+        };
+        triState("Look", &ms.invert[index], "Normal", "Inverted");
+        triState("Flying", &ms.invertFlight[index], "Normal", "Inverted");
+        triState("Vibration", &ms.vibration[index], "Off", "On");
 
         const char* teams[] = {"Red Team", "Blue Team"};
         if (ImGui::Combo("Team", &ms.teamIndex[index], teams, IM_ARRAYSIZE(teams))) {
@@ -198,7 +221,8 @@ namespace MCC::Splitscreen {
 
         std::string name = Settings::CharacterName(p_profile->name);
         if (ImGui::Button("Save Character")) {
-            chosen = Settings::SaveCharacter(name, game, armor, p_profile->name);
+            chosen = Settings::SaveCharacter(name, game, armor, p_profile->name,
+                                             &Settings::LookColors(index, Settings::GameOfArmorGame(game)));
             Settings::Save();
         }
         if (ImGui::IsItemHovered())
@@ -235,11 +259,8 @@ namespace MCC::Splitscreen {
         if (ImGui::Button("Use Game Armor")) {
             Settings::ClearArmor(index, game);
             Settings::Save();
-            if (current) {
-                CGameManager::apply_profiles();
-                Settings::ApplyAll(false, Settings::State().teamIndex); // no team was picked here
+            if (current)
                 ReloadSettings();
-            }
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Drops the %s armor picked here, going back to the armor from the game",
@@ -266,10 +287,8 @@ namespace MCC::Splitscreen {
 
         if (changed) {
             Settings::Save();
-            if (current) {
-                Settings::ApplyArmor(index, p_profile->profile);
+            if (current)
                 ReloadSettings();
-            }
         }
     }
 
@@ -410,11 +429,11 @@ namespace MCC::Splitscreen {
 
         SharedPlayerContext(index);
 
-        bool is_disabled = (!index && !p_setting->b_override_profile) || (index && p_setting->b_use_player0_profile);
+        // "Copy Player 1's Look" only shares the look; controls stay each player's own
+        bool look_shared = index && p_setting->b_use_player0_profile;
 
         if (ImGui::CollapsingHeader("Gamepad Mapping")) {
             ImGui::Indent();
-            ImGui::BeginDisabled(is_disabled);
 
             ImGui::PushItemWidth(200);
             if (ProfileCombo("Controller Profile##mapping", &ms.controllerProfile[index])) {
@@ -426,24 +445,54 @@ namespace MCC::Splitscreen {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Changing a button below changes this profile for every player using it");
 
-            // binds listen to this player's own controller
-            int controller = (p_profile->controller_index >= 0 && p_profile->controller_index < 4) ? p_profile->controller_index : 0;
-            char owner[16];
-            snprintf(owner, sizeof(owner), "player%d", index);
-            ProfileButtonsContext(owner, ms.controllerProfile[index], controller);
-
-            if (ImGui::TreeNode("Other Actions")) {
-                ImGui::TextDisabled("Not part of a controller profile: this player only, and not saved");
-                p_profile->mapping.ImGuiContext(true);
-                ImGui::TreePop();
+            int profile = ms.controllerProfile[index];
+            auto& profiles = Settings::Profiles();
+            bool shared = false;
+            for (int i = 0; i < 4; ++i) shared |= i != index && ms.controllerProfile[i] == profile;
+            bool own = profile >= 0 && profile < (int)profiles.size() && profiles[profile].builtin < 0 && !shared;
+            if (!own) {
+                ImGui::TextWrapped(profile < 0 ? "Using the buttons set in MCC. Customize to give this player buttons of their own."
+                                               : "This profile is a preset or shared with another player. Customize to give this player a copy of their own.");
+                if (ImGui::Button("Customize My Buttons")) {
+                    Settings::OwnProfile(index, ms);
+                    ReloadSettings();
+                    Settings::Save();
+                }
+            } else {
+                // binds listen to this player's own controller
+                int controller = (p_profile->controller_index >= 0 && p_profile->controller_index < 4) ? p_profile->controller_index : 0;
+                char owner[16];
+                snprintf(owner, sizeof(owner), "player%d", index);
+                ProfileButtonsContext(owner, profile, controller);
+                ImGui::TextDisabled("Other actions (Sprint, vehicles, Forge...) keep MCC's buttons");
             }
-            ImGui::EndDisabled();
             ImGui::Unindent();
         }
 
         if (ImGui::CollapsingHeader("Armor")) {
             ImGui::Indent();
-            ImGui::BeginDisabled(is_disabled);
+            if (look_shared)
+                ImGui::TextDisabled("\"Copy player 1's look\" is on: this player wears player 1's look");
+            ImGui::BeginDisabled(look_shared);
+            bool in_match = Settings::CurrentGame() >= 0;
+            ImGui::BeginDisabled(!in_match);
+            if (ImGui::Button("Copy Look From MCC")) {
+                Settings::CaptureLook(index);
+                Settings::Save();
+                ReloadSettings();
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Gives this player the armor, colors and service tag set in MCC right now, for the game being played.\n"
+                                  "Change MCC's customization between matches to give each player a different look.");
+            ImGui::SameLine();
+            if (ImGui::Button("Use MCC Look")) {
+                Settings::ClearLook(index);
+                Settings::Save();
+                ReloadSettings();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Drops this player's look (for the game being played, or all games outside a match)");
             for (int game = 0; game < Settings::ArmorGameCount; ++game) {
                 ImGui::PushID(game);
                 if (ImGui::CollapsingHeader(Settings::ArmorGameName(game))) {
@@ -457,23 +506,12 @@ namespace MCC::Splitscreen {
             ImGui::Unindent();
         }
 
-        if (ImGui::CollapsingHeader("Profile")) {
+        if (ImGui::CollapsingHeader("Profile (read only)")) {
             ImGui::Indent();
-            ImGui::BeginDisabled(is_disabled);
-
-            // The raw editor also shows look inversion and sensitivity; carry
-            // an edit there over to the shared settings.
-            bool invert = p_profile->profile.LookControlsInverted;
-            unsigned char sensitivity = p_profile->profile.VerticalLookSensitivity;
+            ImGui::TextWrapped("What the game last got for this player: the MCC profile with this player's settings above laid over it. "
+                               "It is rebuilt every time the game asks, so change the settings above instead.");
+            ImGui::BeginDisabled(true);
             p_profile->profile.ImGuiContext();
-
-            if (p_profile->profile.LookControlsInverted != invert ||
-                p_profile->profile.VerticalLookSensitivity != sensitivity) {
-                ms.invert[index] = p_profile->profile.LookControlsInverted;
-                ms.sensitivity[index] = p_profile->profile.VerticalLookSensitivity;
-                Settings::Save();
-            }
-
             ImGui::EndDisabled();
             ImGui::Unindent();
         }
@@ -486,10 +524,15 @@ namespace MCC::Splitscreen {
 
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Options")) {
-                if (ImGui::MenuItem("Use player1's profile", nullptr, &p_setting->b_use_player0_profile)) {
+                if (ImGui::MenuItem("Copy player 1's look", nullptr, &p_setting->b_use_player0_profile)) {
                     ms.usePlayer0Profile = p_setting->b_use_player0_profile;
                     Settings::Save();
+                    ReloadSettings();
                 }
+                if (ImGui::MenuItem("Anyone can pause", nullptr, &ms.anyoneCanPause))
+                    Settings::Save();
+                if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
+                    Settings::Save();
                 if (ImGui::MenuItem("Enable K/M for player1", nullptr, &p_setting->b_player0_use_km)) {
                     ms.useKM = p_setting->b_player0_use_km;
                     Settings::Save();

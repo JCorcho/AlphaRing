@@ -12,11 +12,18 @@ public:
     CXboxContext(ImFont* font);
     ~CXboxContext();
 
-    void open();
+    // `pad`: the controller that opened it, whose player's page shows first (-1: keyboard).
+    void open(int pad = -1);
     void close();
     bool isOpen() const;
 
     void handleInput(InputCommand cmd);
+
+    // Waiting for a button press (assigning a controller, binding a button).
+    bool isCapturing() const;
+    int capturePad() const; // -1 = any controller
+    void captureButton(int pad, int button);
+    void cancelCapture();
     void render() override;
 
 private:

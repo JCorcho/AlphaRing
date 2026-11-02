@@ -14,7 +14,7 @@ set(WRAPPER_DLL_NAME "${WRAPPER_NAME}.dll")
 set(LIBRARY_LIST
         minhook imgui lua spdlog tinyxml2
         utils game
-        Version
+        Version hid setupapi
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/src)

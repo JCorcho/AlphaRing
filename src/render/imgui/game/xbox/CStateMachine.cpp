@@ -5,6 +5,12 @@
 
 #include <SDL.h>
 #include <SDL_mixer.h>
+
+#include "mcc/CGameManager.h"
+#include "mcc/settings/MenuSettings.h"
+#include "input/Input.h"
+#include "input/PlayStation.h"
+#include "render/imgui/Toast.h"
 #include <array>
 #include <algorithm>
 #include <cstdint>
@@ -54,7 +60,9 @@ StateMachine::StateMachine(const Menu& menuInstance, const std::array<Mix_Chunk*
         0,
         0.25f,
         Phase::Opening,
-        {1, false, {0,0,0,0}, {0,0,0,0}, {3,3,3,3}, {false,false,false,false}, {0,1,0,1}, {{0,0,0},{0,0,0},{0,0,0},{0,0,0}}, false}
+        MenuState{},
+        Capture{},
+        {}
     },
     running(true)
 {
@@ -110,7 +118,15 @@ void StateMachine::handleInput(InputCommand cmd)
         case InputCommand::Up:    handleUp(); break;
         case InputCommand::Down:  handleDown(); break;
         case InputCommand::Select: handleOption(); break;
-        case InputCommand::Back:  handleClose(); break;
+        case InputCommand::Back:
+            if (currentState.phase == Phase::InIdle) { // B leaves a subpage first
+                Mix_PlayChannel(-1, currentState.sounds[1], 0);
+                currentState.phase = Phase::ShiftOut;
+                currentState.time = 0;
+            } else {
+                handleClose();
+            }
+            break;
     }
 }
 
@@ -234,31 +250,230 @@ void StateMachine::handleDown() {
 // ------------------------------------------------------------
 // Selection logic (audio replaced)
 // ------------------------------------------------------------
-void StateMachine::handleSubOption() {
-    auto& sub = currentState.menu.pages[currentState.pageIndex]
-                    .options[currentState.optionIndex]
-                    .subOptions[currentState.subOptionIndex];
+namespace Settings = AlphaRing::MenuSettings;
+
+static const char* ButtonName(int button) {
+    auto names = CGamepadMapping::ButtonNames();
+    return (button >= 0 && button < 16) ? names->at(button) : "None";
+}
+
+static std::string PlayerName(int player) {
+    auto profile = CGameManager::get_profile(player);
+    char name[128] = {};
+    if (profile) WideCharToMultiByte(CP_UTF8, 0, profile->name, -1, name, sizeof(name), nullptr, nullptr);
+    return name[0] ? name : "Player " + std::to_string(player + 1);
+}
+
+int StateMachine::playerPad(int player) const {
+    if (player < 0 || player >= 4) return -1;
+    if (player == 0 && currentState.menuState.useKM) return -1;
+    int pad = currentState.menuState.controllerIndex[player];
+    return (pad >= 0 && pad < 4) ? pad : -1;
+}
+
+void StateMachine::setPage(int page) {
+    currentState.pageIndex = (std::max)(0, (std::min)(page, Menu::MAX_PAGES - 1));
+    currentState.optionIndex = 0;
+}
+
+bool StateMachine::isCapturing() const {
+    return currentState.capture.kind != CaptureKind::None;
+}
+
+int StateMachine::capturePad() const {
+    return currentState.capture.pad;
+}
+
+void StateMachine::startCapture(CaptureKind kind, int player, int action) {
+    auto& c = currentState.capture;
+    c = Capture{};
+    c.kind = kind;
+    c.player = player;
+    c.action = action;
+    // a button of a player's controls comes from their own controller
+    c.pad = kind == CaptureKind::Button ? playerPad(player) : -1;
+    if (kind == CaptureKind::AllControllers && player == 0 && currentState.menuState.useKM)
+        c.player = 1; // player 1 is on keyboard/mouse
+}
+
+void StateMachine::cancelCapture() {
+    if (!isCapturing()) return;
+    currentState.capture.kind = CaptureKind::None;
+    Mix_PlayChannel(-1, currentState.sounds[5], 0);
+}
+
+void StateMachine::captureButton(int pad, int button) {
+    auto& c = currentState.capture;
+    auto& ms = currentState.menuState;
+    switch (c.kind) {
+        case CaptureKind::Controller:
+            ms.controllerIndex[c.player] = pad;
+            c.kind = CaptureKind::None;
+            AlphaRing::Toast::Show("Player %d: Controller %d", c.player + 1, pad + 1);
+            break;
+        case CaptureKind::AllControllers: {
+            for (int taken : c.taken)
+                if (taken == pad) return; // one controller per player
+            ms.controllerIndex[c.player] = pad;
+            c.taken[c.player] = pad;
+            AlphaRing::Toast::Show("Player %d: Controller %d", c.player + 1, pad + 1);
+            c.time = 0;
+            if (++c.player >= ms.playerCount)
+                c.kind = CaptureKind::None;
+            break;
+        }
+        case CaptureKind::Button: {
+            std::lock_guard lock(Settings::Mutex());
+            int profile = Settings::OwnProfile(c.player, ms);
+            auto& profiles = Settings::Profiles();
+            if (profile >= 0 && profile < (int)profiles.size()) {
+                Settings::ProfileButton(profiles[profile].buttons, c.action) = (CGamepadMapping::eButton)button;
+                Settings::Save();
+            }
+            c.kind = CaptureKind::None;
+            refreshSubpage();
+            break;
+        }
+        default:
+            return;
+    }
+    Mix_PlayChannel(-1, currentState.sounds[4], 0);
+}
+
+// Fills the subpage being opened (or redrawn) with what it shows now.
+void StateMachine::refreshSubpage() {
+    if (currentState.pageIndex < 1) return;
+    int player = currentState.pageIndex - 1;
+    auto& option = currentState.menu.pages[currentState.pageIndex].options[currentState.optionIndex];
+    auto& ms = currentState.menuState;
+    std::lock_guard lock(Settings::Mutex());
+
+    switch (option.subOptionType) {
+        case Menu::k_subController: {
+            DWORD real = AlphaRing::Input::RealConnectedMask();
+            for (int slot = 0; slot < 4 && slot < (int)option.subOptions.size(); ++slot) {
+                std::string label = k_controllerNames[slot];
+                if (const char* name = AlphaRing::Input::PlayStation::SlotName(slot))
+                    label += std::string(": ") + name;
+                else if (!(real & (1u << slot)))
+                    label += " (not connected)";
+                option.subOptions[slot].label = label;
+            }
+            break;
+        }
+        case Menu::k_subProfile: {
+            std::vector<std::string> names;
+            for (auto& profile : Settings::Profiles()) names.push_back(profile.name);
+            currentState.menu.setControllerProfiles(names);
+            break;
+        }
+        case Menu::k_subEditButtons: {
+            int profile = ms.controllerProfile[player];
+            auto& profiles = Settings::Profiles();
+            ControllerProfileMapping buttons = (profile >= 0 && profile < (int)profiles.size()) ? profiles[profile].buttons
+                                                                                                : Settings::MccButtons();
+            option.subOptions.clear();
+            for (int a = 0; a < Settings::k_profileActionCount; ++a) {
+                std::string label = std::string(Settings::ProfileActionName(a)) + ": " + ButtonName(Settings::ProfileButton(buttons, a));
+                option.addOption(Option(label, OptionType::SubpageOption, Menu::k_subEditButtons));
+            }
+            option.addOption(Option("Reset My Buttons", OptionType::SubpageOption, Menu::k_subEditButtons));
+            break;
+        }
+        case Menu::k_subLook: {
+            int game = Settings::CurrentGame();
+            int armorGame = Settings::ArmorGameOf(game);
+            option.subOptions.clear();
+            option.addOption(Option(game >= 0 ? "Copy My Look From MCC Now" : "Copy My Look From MCC (in a match)", OptionType::SubpageOption, Menu::k_subLook));
+            option.addOption(Option("Use MCC's Look", OptionType::SubpageOption, Menu::k_subLook));
+            option.addOption(Option("Save My Look as a Character", OptionType::SubpageOption, Menu::k_subLook));
+            currentState.lookCharacters.clear();
+            auto& characters = Settings::Characters();
+            for (int i = 0; i < (int)characters.size(); ++i) {
+                if (armorGame < 0 || characters[i].game != armorGame) continue;
+                currentState.lookCharacters.push_back(i);
+                option.addOption(Option("Wear: " + characters[i].name, OptionType::SubpageOption, Menu::k_subLook));
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+bool StateMachine::handleSubOptionStays() {
+    auto& option = currentState.menu.pages[currentState.pageIndex].options[currentState.optionIndex];
+    int index = currentState.subOptionIndex;
+    int player = currentState.pageIndex - 1;
+    auto& ms = currentState.menuState;
+    if (player < 0 || index < 0 || index >= (int)option.subOptions.size()) return false;
 
     Mix_PlayChannel(-1, currentState.sounds[4], 0);
 
-    switch (sub.subOptionType) {
-        case 0:
-            currentState.menuState.controllerIndex[currentState.pageIndex - 1] = currentState.subOptionIndex;
-            break;
-        case 1:
-            currentState.menuState.playerColors[currentState.pageIndex - 1].colors[0] = currentState.subOptionIndex;
-            break;
-        case 2:
-            currentState.menuState.playerColors[currentState.pageIndex - 1].colors[1] = currentState.subOptionIndex;
-            break;
-        case 3:
-            currentState.menuState.playerColors[currentState.pageIndex - 1].colors[2] = currentState.subOptionIndex;
-            break;
-        case 4:
-            currentState.menuState.controllerProfile[currentState.pageIndex - 1] = currentState.subOptionIndex;
-            break;
+    switch (option.subOptionType) {
+        case Menu::k_subController:
+            if (index == 5)
+                startCapture(CaptureKind::Controller, player);
+            else
+                ms.controllerIndex[player] = index;
+            return false;
+        case Menu::k_subPrimaryColor:
+        case Menu::k_subPrimaryColor + 1:
+        case Menu::k_subPrimaryColor + 2:
+            ms.playerColors[player].colors[option.subOptionType - Menu::k_subPrimaryColor] = index - 1;
+            return false;
+        case Menu::k_subProfile:
+            ms.controllerProfile[player] = index - 1;
+            return false;
+        case Menu::k_subEditButtons:
+            if (index < Settings::k_profileActionCount) {
+                startCapture(CaptureKind::Button, player, index);
+            } else {
+                std::lock_guard lock(Settings::Mutex());
+                int profile = Settings::OwnProfile(player, ms);
+                Settings::ResetProfile(profile);
+                Settings::Save();
+                refreshSubpage();
+            }
+            return true;
+        case Menu::k_subLook: {
+            std::lock_guard lock(Settings::Mutex());
+            int game = Settings::CurrentGame();
+            int armorGame = Settings::ArmorGameOf(game);
+            if (index == Menu::k_lookCopy) {
+                if (Settings::CaptureLook(player, &ms))
+                    AlphaRing::Toast::Show("Player %d now wears MCC's current look", player + 1);
+                else
+                    AlphaRing::Toast::Show("Start a match first: the look is copied from the game being played");
+            } else if (index == Menu::k_lookClear) {
+                Settings::ClearLook(player, &ms);
+                AlphaRing::Toast::Show("Player %d wears MCC's look", player + 1);
+            } else if (index == Menu::k_lookSave) {
+                if (armorGame < 0) {
+                    AlphaRing::Toast::Show("Characters are for Halo 2A, 3, Reach and 4 matches");
+                } else {
+                    auto profile = CGameManager::get_profile(player);
+                    std::string name = Settings::CharacterName(profile ? profile->name : L"Player");
+                    Settings::SaveCharacter(name, armorGame, Settings::Armor(player, armorGame),
+                                            profile ? profile->name : L"Player", &Settings::LookColors(player, game));
+                    AlphaRing::Toast::Show("Saved \"%s\"", name.c_str());
+                }
+            } else {
+                int n = index - Menu::k_lookFirstCharacter;
+                if (n >= 0 && n < (int)currentState.lookCharacters.size()) {
+                    auto profile = CGameManager::get_profile(player);
+                    Settings::LoadCharacter(currentState.lookCharacters[n], player,
+                                            profile ? profile->name : nullptr, profile ? (int)std::size(profile->name) : 0);
+                    // the character's colors show, not ones picked here
+                    for (int& color : ms.playerColors[player].colors) color = -1;
+                    AlphaRing::Toast::Show("Player %d wears %s", player + 1, Settings::Characters()[currentState.lookCharacters[n]].name.c_str());
+                }
+            }
+            Settings::Save();
+            return false;
+        }
         default:
-            break;
+            return false;
     }
 }
 
@@ -266,49 +481,68 @@ void StateMachine::handleOption() {
     auto& opt = currentState.menu.pages[currentState.pageIndex]
                     .options[currentState.optionIndex];
 
-    Mix_PlayChannel(-1, currentState.sounds[4], 0);
-
-    if (currentState.pageIndex == 0) {
-        if (opt.type == OptionType::Increment && currentState.menuState.playerCount < 4)
-            currentState.menuState.playerCount++;
-
-        if (opt.type == OptionType::Decrement && currentState.menuState.playerCount > 1)
-            currentState.menuState.playerCount--;
-
-        if (opt.type == OptionType::Boolean) {
-            bool& value = (opt.subOptionType == Menu::k_usePlayer0ProfileOption)
-                ? currentState.menuState.usePlayer0Profile
-                : currentState.menuState.useKM;
-            value = !value;
-        }
-    } else {
-        int player = currentState.pageIndex - 1;
-
-        if (opt.type == OptionType::Increment && currentState.menuState.sensitivity[player] < 20)
-            currentState.menuState.sensitivity[player]++;
-
-        if (opt.type == OptionType::Decrement && currentState.menuState.sensitivity[player] > 1)
-            currentState.menuState.sensitivity[player]--;
-
-        if (opt.type == OptionType::Boolean)
-            currentState.menuState.invert[player] = !currentState.menuState.invert[player];
-    }
-
-    if (opt.type == OptionType::TeamToggle) {
-        auto& team = currentState.menuState.teamIndex[currentState.pageIndex - 1];
-        team = !team;
-    }
-
     if (currentState.phase == Phase::InIdle) {
-        handleSubOption();
-        currentState.phase = Phase::ShiftOut;
-        currentState.time = 0;
+        if (!handleSubOptionStays()) {
+            currentState.phase = Phase::ShiftOut;
+            currentState.time = 0;
+        }
+        return;
     }
 
-    if (opt.type == OptionType::Subpage && currentState.phase == Phase::Idle) {
-        currentState.subOptionWindow = {0,1,2,3,4,5};
-        currentState.phase = Phase::ShiftIn;
-        currentState.time = 0;
+    Mix_PlayChannel(-1, currentState.sounds[4], 0);
+    auto& ms = currentState.menuState;
+    int player = currentState.pageIndex - 1;
+
+    switch (opt.type) {
+        case OptionType::Increment:
+            if (currentState.pageIndex == 0) {
+                if (ms.playerCount < 4) ms.playerCount++;
+            } else if (ms.sensitivity[player] < 20) {
+                ms.sensitivity[player]++;
+            }
+            break;
+        case OptionType::Decrement:
+            if (currentState.pageIndex == 0) {
+                if (ms.playerCount > 1) ms.playerCount--;
+            } else if (ms.sensitivity[player] > 0) {
+                ms.sensitivity[player]--; // 0 = MCC's
+            }
+            break;
+        case OptionType::Boolean:
+            if (currentState.pageIndex == 0) {
+                switch (opt.subOptionType) {
+                    case Menu::k_useKMOption:              ms.useKM = !ms.useKM; break;
+                    case Menu::k_usePlayer0ProfileOption:  ms.usePlayer0Profile = !ms.usePlayer0Profile; break;
+                    case Menu::k_anyoneCanPauseOption:     ms.anyoneCanPause = !ms.anyoneCanPause; break;
+                    case Menu::k_nativePlayStationOption:  ms.nativePlayStation = !ms.nativePlayStation; break;
+                }
+            }
+            break;
+        case OptionType::Cycle:
+            if (player >= 0) {
+                int* value = opt.subOptionType == Menu::k_cycleLook   ? &ms.invert[player]
+                           : opt.subOptionType == Menu::k_cycleFlight ? &ms.invertFlight[player]
+                                                                      : &ms.vibration[player];
+                *value = *value >= 1 ? -1 : *value + 1; // MCC -> off/normal -> on/inverted -> MCC
+            }
+            break;
+        case OptionType::TeamToggle:
+            if (player >= 0) ms.teamIndex[player] = !ms.teamIndex[player];
+            break;
+        case OptionType::Action:
+            if (opt.subOptionType == Menu::k_actionAssignControllers)
+                startCapture(CaptureKind::AllControllers, 0);
+            break;
+        case OptionType::Subpage:
+            if (currentState.phase == Phase::Idle) {
+                refreshSubpage();
+                currentState.subOptionWindow = {0,1,2,3,4,5};
+                currentState.phase = Phase::ShiftIn;
+                currentState.time = 0;
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -343,6 +577,12 @@ void StateMachine::finishOptionShiftDown() {
 // ------------------------------------------------------------
 void StateMachine::update(float dt)
 {
+    if (isCapturing()) {
+        currentState.capture.time += dt;
+        if (currentState.capture.time > 10.0f)
+            cancelCapture();
+    }
+
     if (currentState.time < currentState.duration)
         currentState.time += dt;
 
@@ -434,6 +674,7 @@ void StateMachine::render(int WINDOW_WIDTH, int WINDOW_HEIGHT, ImFont* font)
     // Example placeholder hook:
     // renderMenuImGui(drawList, currentState);
     renderMenu(WINDOW_WIDTH, WINDOW_HEIGHT, currentState, font);
+    renderCapturePrompt(WINDOW_WIDTH, WINDOW_HEIGHT, currentState, font);
 }
 
 // ------------------------------------------------------------

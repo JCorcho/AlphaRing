@@ -16,6 +16,7 @@
 #include "./game/halo3/CHalo3Context.h"
 #include "./game/xbox/CXboxContext.h"
 #include "./game/xbox/assets/segoeui_ttf.h"
+#include "./Toast.h"
 
 #include "mcc/mcc.h"
 #include "mcc/CGameGlobal.h"
@@ -36,7 +37,7 @@ namespace AlphaRing::Render::ImGui {
     static bool s_advancedPending = false;
     static bool s_advancedPendingMouse = false;
 
-    void ToggleXboxMenu() {
+    void ToggleXboxMenu(int pad) {
         if (!g_pXboxContext) return;
         if (g_pXboxContext->isOpen()) {
             g_pXboxContext->close();
@@ -44,7 +45,7 @@ namespace AlphaRing::Render::ImGui {
         }
         s_advancedPending = false;
         AlphaRing::Global::Global()->show_imgui = false;
-        g_pXboxContext->open();
+        g_pXboxContext->open(pad);
     }
 
     void ToggleAdvancedMenu(bool showMouse) {
@@ -133,7 +134,8 @@ namespace AlphaRing::Render::ImGui {
         if (s_advancedWasShown && !advancedShown)
             AlphaRing::MenuSettings::SaveAll();
         s_advancedWasShown = advancedShown;
-        if (!AlphaRing::Global::Global()->show_imgui && !xboxOpen)
+        bool toasts = AlphaRing::Toast::Active();
+        if (!AlphaRing::Global::Global()->show_imgui && !xboxOpen && !toasts)
             return;
 
         ImGui_ImplDX11_NewFrame();
@@ -143,7 +145,7 @@ namespace AlphaRing::Render::ImGui {
         bool inGame = MCC::IsInGame();
         auto pGameGlobal = GameGlobal();
 
-        if (!AlphaRing::Global::Global()->show_imgui_mouse)
+        if (!AlphaRing::Global::Global()->show_imgui_mouse || !AlphaRing::Global::Global()->show_imgui)
             ::ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 
         if (xboxOpen)
@@ -169,6 +171,8 @@ namespace AlphaRing::Render::ImGui {
                 ::ImGui::EndMainMenuBar();
             }
         }
+
+        AlphaRing::Toast::Draw();
 
         ::ImGui::Render();
         Graphics()->SetRenderTargetView();

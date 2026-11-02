@@ -35,7 +35,7 @@ CXboxContext::~CXboxContext() {
         Mix_FreeChunk(chunk);
 }
 
-void CXboxContext::open() {
+void CXboxContext::open(int pad) {
     namespace Settings = AlphaRing::MenuSettings;
     {
         std::lock_guard lock(Settings::Mutex());
@@ -45,7 +45,17 @@ void CXboxContext::open() {
         m_menu.setControllerProfiles(profileNames);
 
         m_stateMachine.emplace(m_menu, m_sounds);
-        m_stateMachine->getState().menuState = Settings::State();
+        auto& ms = Settings::State();
+        m_stateMachine->getState().menuState = ms;
+
+        // opened from a player's controller: that player's page
+        for (int i = 0; pad >= 0 && i < ms.playerCount && i < 4; ++i) {
+            if (i == 0 && ms.useKM) continue;
+            if (ms.controllerIndex[i] == pad) {
+                m_stateMachine->setPage(i + 1);
+                break;
+            }
+        }
     }
     Mix_PlayChannel(-1, m_sounds[0], 0);
     m_lastTick = SDL_GetTicks();
@@ -63,6 +73,24 @@ bool CXboxContext::isOpen() const {
 void CXboxContext::handleInput(InputCommand cmd) {
     if (m_stateMachine.has_value())
         m_stateMachine->handleInput(cmd);
+}
+
+bool CXboxContext::isCapturing() const {
+    return m_stateMachine.has_value() && m_stateMachine->isCapturing();
+}
+
+int CXboxContext::capturePad() const {
+    return m_stateMachine.has_value() ? m_stateMachine->capturePad() : -1;
+}
+
+void CXboxContext::captureButton(int pad, int button) {
+    if (m_stateMachine.has_value())
+        m_stateMachine->captureButton(pad, button);
+}
+
+void CXboxContext::cancelCapture() {
+    if (m_stateMachine.has_value())
+        m_stateMachine->cancelCapture();
 }
 
 void CXboxContext::render() {

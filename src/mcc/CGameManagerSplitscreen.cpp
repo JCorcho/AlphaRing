@@ -7,9 +7,32 @@
 #include "input/Input.h"
 #include "mcc/settings/MenuSettings.h"
 #include "log/MatchLog.h"
+#include "render/imgui/Toast.h"
 
 using AlphaRing::MatchLog::Describe;
 using AlphaRing::MatchLog::FirstThisMatch;
+
+// A match is being set up or running: the profiles and button layouts the
+// game asks for now are for play, not for MCC's menus (whose settings screens
+// must see and edit the MCC profile itself).
+// From game_setup until MCC reports the match running (loading can take a
+// while), at most two minutes, so a missed exit can't keep MCC's menus off
+// the MCC profile.
+static std::atomic<bool> s_match_starting{false};
+static std::atomic<ULONGLONG> s_match_started_at{0};
+
+bool CGameManager::in_match() {
+    if (MCC::IsInGame()) {
+        s_match_starting = false;
+        return true;
+    }
+    return s_match_starting.load() && GetTickCount64() - s_match_started_at.load() < 120000;
+}
+
+void CGameManager::set_match_active(bool active) {
+    s_match_started_at = GetTickCount64();
+    s_match_starting = active;
+}
 
 void CGameManager::set_vibration(CGameManager *self, DWORD dwUserIndex, XINPUT_VIBRATION *pVibration) {
     CInputDevice* p_device;
@@ -26,7 +49,9 @@ void CGameManager::set_vibration(CGameManager *self, DWORD dwUserIndex, XINPUT_V
     if (pVibration == nullptr || (p_device = get_controller(dwUserIndex)) == nullptr)
         return;
 
-    AlphaRing::Input::SetState(p_device->input_user, pVibration);
+    XINPUT_VIBRATION off{};
+    AlphaRing::Input::SetState(p_device->input_user,
+                               AlphaRing::MenuSettings::VibrationOff((int)dwUserIndex) ? &off : pVibration);
 }
 
 static bool get_xbox_user_id_inner(CGameManager *self, __int64 *pId, wchar_t *pName, int size, int index,
@@ -71,6 +96,62 @@ bool CGameManager::get_xbox_user_id(CGameManager *self, __int64 *pId, wchar_t *p
         MATCH_LOG("get_xbox_user_id index={} (out of range) -> {} via {}", index, result, path);
     }
     return result;
+}
+
+// ---------------------------------------------------------------- shared pause
+
+// Start held on the controller of any player but player 1, for "Anyone Can
+// Pause": the game only takes Start (its pause menu) from player 1.
+static bool others_hold_start(int player0_pad) {
+    auto p_setting = AlphaRing::Global::MCC::Splitscreen();
+    if (!p_setting->b_override || !AlphaRing::MenuSettings::AnyoneCanPause())
+        return false;
+    for (int i = 1; i < p_setting->player_count && i < 4; ++i) {
+        auto profile = CGameManager::get_profile(i);
+        if (!profile) continue;
+        int pad = profile->controller_index;
+        if (pad < 0 || pad >= 4 || pad == player0_pad) continue;
+        if (AlphaRing::Input::RecentButtons((DWORD)pad) & XINPUT_GAMEPAD_START)
+            return true;
+    }
+    return false;
+}
+
+// Applied to MCC's own XInputGetState reads (its pause menu and shell).
+void CGameManager::filter_pad(DWORD slot, XINPUT_STATE* state) {
+    auto p_setting = AlphaRing::Global::MCC::Splitscreen();
+    if (!p_setting->b_override || p_setting->b_player0_use_km || !in_match())
+        return;
+    auto profile = get_profile(0);
+    if (!profile || profile->controller_index != (int)slot)
+        return;
+    if (others_hold_start((int)slot)) {
+        state->Gamepad.wButtons |= XINPUT_GAMEPAD_START;
+        state->dwPacketNumber ^= 0x40000000; // a new packet number, as the buttons differ from the pad's
+    }
+}
+
+// Player 1 on keyboard/mouse pauses with Escape.
+static void press_escape() {
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_ESCAPE;
+    inputs[1] = inputs[0];
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(2, inputs, sizeof(INPUT));
+}
+
+// Tells the players when a controller in the match drops out or comes back.
+static void track_connection(int index, bool connected) {
+    static int s_state[4] = {-1, -1, -1, -1}; // -1 unknown, 0 gone, 1 there
+    static std::atomic<long> s_seen[4];
+    if (index < 0 || index >= 4) return;
+    if (AlphaRing::MatchLog::FirstThisMatch(s_seen[index]))
+        s_state[index] = -1; // a new match: no notice for how it starts
+    int now = connected ? 1 : 0;
+    if (s_state[index] != -1 && s_state[index] != now)
+        AlphaRing::Toast::Show(connected ? "Player %d's controller is back" : "Player %d's controller disconnected", index + 1);
+    s_state[index] = now;
 }
 
 bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *p_input) {
@@ -128,17 +209,40 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
         if (log_device)
             MATCH_LOG("input player={} reads controller_index={} input_user={} connected={}", index,
                       get_profile(index)->controller_index, p_device->input_user, connected);
+        track_connection((int)index, connected);
 
         // first button press per player per match: shows a pad's input reaches that player
         static std::atomic<long> s_press_seen[8];
         if (index < 8 && p_device->state.Gamepad.wButtons != 0 && FirstThisMatch(s_press_seen[index]))
             MATCH_LOG("input player={} first press buttons={:#06x} (input_user={})", index,
                       p_device->state.Gamepad.wButtons, p_device->input_user);
+
+        // the Xbox menu is being driven with the controllers
+        if (AlphaRing::Input::XboxMenuOpen())
+            memset(&p_device->state.Gamepad, 0, sizeof(p_device->state.Gamepad));
+
+        // Anyone Can Pause: another player's Start reaches player 1, or
+        // Escape when player 1 is on keyboard/mouse.
+        static bool s_start_was_down[4];
+        bool start = (p_device->state.Gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
+        if (index == 0 && others_hold_start(p_device->input_user)) {
+            p_device->state.Gamepad.wButtons |= XINPUT_GAMEPAD_START;
+            p_device->state.dwPacketNumber ^= 0x40000000;
+        } else if (index > 0 && index < 4 && start && !s_start_was_down[index] && p_profile->b_player0_use_km &&
+                   AlphaRing::MenuSettings::AnyoneCanPause()) {
+            press_escape();
+        }
+        if (index < 4) s_start_was_down[index] = start;
     }
 
+    // set_state reads the device's state; should it ask XInput itself, this
+    // thread is handed the same state for that slot.
+    if (p_device != device_manager->p_input_device[4])
+        AlphaRing::Input::SetThreadState(p_device->input_user, &p_device->state);
     result = p_device
             ->p_method_table
             ->set_state(p_device, delta_time, p_input);
+    AlphaRing::Input::SetThreadState(0, nullptr);
 
     p_device
             ->p_method_table
@@ -147,95 +251,76 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
     return result;
 }
 
-// Player 1's own profile from the game, with the armor picked for player 1 in
-// the advanced menu laid over a copy of it. The game's profile itself is left
-// alone, so the pick is never written back into the player's MCC profile.
-static CUserProfile* player0_game_profile(CGameManager* self, CUserProfile* base) {
-    if (!base || !AlphaRing::MenuSettings::HasArmor(0))
-        return base;
-    static CUserProfile s_player0;
-    memcpy(&s_player0, base, sizeof(CUserProfile));
-    AlphaRing::MenuSettings::ApplyArmor(0, s_player0);
-    return &s_player0;
-}
-
+// The profile the game gets for a player: the MCC profile (player 1's, the
+// only one MCC has) as it is right now, with the player's controls and look
+// from the menus laid over a copy of it. Built on every call, for every game:
+// the MCC profile isn't complete when game_setup runs (Reach, among others,
+// puts the armor in later), so a copy taken then gave everyone the default
+// look. The MCC profile itself is never written.
 CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid)  {
     auto index = get_index(xid);
     auto p_setting = AlphaRing::Global::MCC::Splitscreen();
+    bool split = p_setting->b_override;
 
     static std::atomic<long> s_seen[4];
     if (FirstThisMatch(s_seen[index]))
         MATCH_LOG("get_player_profile xid={:#x} -> index {} override={} (caller {})", (unsigned long long)xid, index,
-                  p_setting->b_override, Describe(_ReturnAddress()));
+                  split, Describe(_ReturnAddress()));
 
-    if (!p_setting->b_override)
-        return index ? ppOriginal.get_player_profile(self, xid)
-                     : player0_game_profile(self, ppOriginal.get_player_profile(self, xid));
+    if (!split && index)
+        return ppOriginal.get_player_profile(self, xid);
+    if (split && !p_setting->b_override_profile)
+        return ppOriginal.get_player_profile(self, get_xuid(0));
 
-    if (!p_setting->b_override_profile && ((!index) || (index && p_setting->b_use_player0_profile)))
-        return player0_game_profile(self, ppOriginal.get_player_profile(self, get_xuid(0)));
+    auto* base = ppOriginal.get_player_profile(self, index ? get_xuid(0) : xid);
+    auto* dest = get_profile(index);
+    if (!base || !dest)
+        return (split && dest) ? &dest->profile : base;
+    // MCC's own menus get the MCC profile (player 1 alone, or out of a match)
+    if (!index && !in_match())
+        return base;
 
-    if (p_setting->b_use_player0_profile)
-        return &get_profile(0)->profile;
-
-    auto* dest = get_profile(get_index(xid));
-
-    // Reach initializes armor into the player-0 profile after game_setup fires, so the
-    // snapshot taken by apply_profiles() is stale. Sync armor from the live player-0
-    // profile on every call while preserving the per-player custom colors and look
-    // settings we applied.
     auto* gg = GameGlobal();
-    if (gg && gg->current_game == CGameGlobal::HaloReach) {
-        auto* base = ppOriginal.get_player_profile(self, get_xuid(0));
-        if (base) {
-            int pc  = dest->profile.PlayerModelPrimaryColorIndex;
-            int sc  = dest->profile.PlayerModelSecondaryColorIndex;
-            int tc  = dest->profile.PlayerModelTertiaryColorIndex;
-            int pci = dest->profile.PlayerModelPrimaryColor;
-            int sci = dest->profile.PlayerModelSecondaryColor;
-            int tci = dest->profile.PlayerModelTertiaryColor;
-            bool lookInverted      = dest->profile.LookControlsInverted;
-            bool mouseLookInverted = dest->profile.MouseLookControlsInverted;
-            unsigned char vertSens  = dest->profile.VerticalLookSensitivity;
-            unsigned char horizSens = dest->profile.HorizontalLookSensitivity;
-            memcpy(&dest->profile, base, sizeof(CUserProfile));
-            dest->profile.PlayerModelPrimaryColorIndex   = pc;
-            dest->profile.PlayerModelSecondaryColorIndex = sc;
-            dest->profile.PlayerModelTertiaryColorIndex  = tc;
-            dest->profile.PlayerModelPrimaryColor        = pci;
-            dest->profile.PlayerModelSecondaryColor      = sci;
-            dest->profile.PlayerModelTertiaryColor       = tci;
-            dest->profile.LookControlsInverted           = lookInverted;
-            dest->profile.MouseLookControlsInverted      = mouseLookInverted;
-            dest->profile.VerticalLookSensitivity        = vertSens;
-            dest->profile.HorizontalLookSensitivity      = horizSens;
-            // and the armor picked for this player in the advanced menu
-            AlphaRing::MenuSettings::ApplyArmor(get_index(xid), dest->profile);
-        }
-    }
-
+    int game = gg ? (int)gg->current_game : -1;
+    CUserProfile composed;
+    bool changed = AlphaRing::MenuSettings::ComposeProfile(index, *base, composed, game);
+    if (!split && !changed)
+        return base;
+    // only bytes that differ change, so a reader never sees the copy half-built
+    if (memcmp(&dest->profile, &composed, sizeof(CUserProfile)) != 0)
+        memcpy(&dest->profile, &composed, sizeof(CUserProfile));
     return &dest->profile;
 }
 
+// The button layout: MCC's (player 1's, as set in MCC's settings), with the
+// player's controller profile laid over a copy of it, or MCC's as it is for
+// a player on "MCC Settings".
 CGamepadMapping* CGameManager::retrive_gamepad_mapping(CGameManager *self, __int64 xid) {
     auto index = get_index(xid);
     auto p_setting = AlphaRing::Global::MCC::Splitscreen();
+    bool split = p_setting->b_override;
 
     static std::atomic<long> s_seen[4];
     if (FirstThisMatch(s_seen[index]))
         MATCH_LOG("retrive_gamepad_mapping xid={:#x} -> index {} (caller {})", (unsigned long long)xid, index,
                   Describe(_ReturnAddress()));
 
-    // Player 0's controller profile (Xbox menu button mapping) is not a splitscreen-only
-    // feature and must apply in every game/mode, so it's kept independent of b_override.
-    if (!index)
-        return &get_profile(0)->mapping;
-
-    if (!p_setting->b_override)
+    if (!split && index)
         return ppOriginal.retrive_gamepad_mapping(self, xid);
 
-    if (p_setting->b_use_player0_profile)
-        return &get_profile(0)->mapping;
+    auto* base = ppOriginal.retrive_gamepad_mapping(self, index ? get_xuid(0) : xid);
+    auto* dest = get_profile(index);
+    if (!base || !dest)
+        return (split && dest) ? &dest->mapping : base;
+    // MCC's controller settings screen edits the real layout
+    if (!index && !in_match())
+        return base;
 
-    return &get_profile(index)->mapping;
+    CGamepadMapping composed;
+    bool changed = AlphaRing::MenuSettings::ComposeMapping(index, *base, composed);
+    if (!changed && !index)
+        return base;
+    if (memcmp(&dest->mapping, &composed, sizeof(CGamepadMapping)) != 0)
+        memcpy(&dest->mapping, &composed, sizeof(CGamepadMapping));
+    return &dest->mapping;
 }

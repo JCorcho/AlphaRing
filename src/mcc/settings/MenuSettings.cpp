@@ -6,7 +6,9 @@
 #include "filesystem/Filesystem.h"
 #include "mcc/CGameManager.h"
 #include "mcc/CGameGlobal.h"
+#include "mcc/mcc.h"
 #include "render/imgui/game/xbox/CXboxColorMapping.h"
+#include "input/PlayStation.h"
 
 #include <Windows.h>
 
@@ -15,6 +17,8 @@
 #include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <memory>
 
 namespace AlphaRing::MenuSettings {
     static const std::string& FilePath() {
@@ -27,8 +31,11 @@ namespace AlphaRing::MenuSettings {
     static constexpr uint32_t k_magic = 0x534D5241;
     // 3 added usePlayer0Profile to the menu state block, 4 the per-player armor,
     // 5 the characters' player names, 6 the players' names, 7 the profiles'
-    // built-in index, 8 the per-game armor and the characters' game
-    static constexpr uint32_t k_version = 8;
+    // built-in index, 8 the per-game armor and the characters' game, 9 a
+    // key/value block at the end (the "MCC" setting values, the new per-player
+    // options, the copied MCC colors), which later additions extend without a
+    // new version
+    static constexpr uint32_t k_version = 9;
 
     // Caps on counts read from the file, so a corrupt one can't ask for a huge allocation.
     static constexpr uint32_t k_maxEntries = 1024;
@@ -177,18 +184,27 @@ namespace AlphaRing::MenuSettings {
     static std::vector<Character> s_characters;
     static std::vector<int> s_armor[4][ArmorGameCount]; // in Character::values layout; empty = none
     static std::string s_playerNames[4]; // UTF-8; empty = the default "Player N"
+    static constexpr int k_gameCount = 7;   // CGameGlobal::eGame
+    static constexpr int k_lookColorCount = 6; // PlayerModel{Primary,Secondary,Tertiary}ColorIndex, then ...Color
+    static std::vector<int> s_lookColors[4][k_gameCount]; // empty = none
 
     static MenuState DefaultState() {
         MenuState ms{};
         ms.playerCount = 1;
         ms.useKM = false;
         ms.usePlayer0Profile = false;
+        ms.anyoneCanPause = true;
+        ms.nativePlayStation = true;
         for (int i = 0; i < 4; ++i) {
             ms.controllerIndex[i] = i;
-            ms.controllerProfile[i] = 0;
-            ms.sensitivity[i] = 3;
-            ms.invert[i] = false;
+            // player 1 keeps the buttons set in MCC; the others start on Default
+            ms.controllerProfile[i] = i == 0 ? -1 : 0;
+            ms.sensitivity[i] = 0;
+            ms.invert[i] = -1;
+            ms.invertFlight[i] = -1;
+            ms.vibration[i] = -1;
             ms.teamIndex[i] = i % 2;
+            for (int& color : ms.playerColors[i].colors) color = -1;
         }
         return ms;
     }
@@ -240,7 +256,7 @@ namespace AlphaRing::MenuSettings {
         Write(os, ms.controllerIndex);
         Write(os, ms.controllerProfile);
         Write(os, ms.sensitivity);
-        for (bool invert : ms.invert) Write(os, (uint8_t)(invert ? 1 : 0));
+        for (int invert : ms.invert) Write(os, (uint8_t)(invert == 1 ? 1 : 0)); // -1 is in the key/value block
         Write(os, ms.teamIndex);
         Write(os, ms.playerColors);
         Write(os, (uint8_t)(ms.usePlayer0Profile ? 1 : 0));
@@ -262,13 +278,115 @@ namespace AlphaRing::MenuSettings {
         ms.playerCount = std::clamp(ms.playerCount, 1, 4);
         ms.useKM = useKM != 0;
         for (int i = 0; i < 4; ++i) {
-            ms.invert[i] = invert[i] != 0;
+            ms.invert[i] = invert[i] != 0 ? 1 : 0;
             ms.controllerIndex[i] = std::clamp(ms.controllerIndex[i], 0, 4); // 4 = no controller
+            ms.sensitivity[i] = std::clamp(ms.sensitivity[i], 0, 20);
             ms.teamIndex[i] = ms.teamIndex[i] ? 1 : 0;
             for (int& color : ms.playerColors[i].colors)
-                color = std::clamp(color, 0, CXboxColorMapping::kColorCount - 1);
+                color = std::clamp(color, -1, CXboxColorMapping::kColorCount - 1);
         }
         return ok;
+    }
+
+    // ---------------------------------------------------------------- key/value block (version 9)
+
+    using KeyValues = std::map<std::string, int32_t>;
+
+    static bool ReadKeyValues(std::istream& is, KeyValues& kv) {
+        uint32_t count;
+        if (!Read(is, count) || count > k_maxEntries * 16) return false;
+        for (uint32_t i = 0; i < count; ++i) {
+            std::string key;
+            int32_t value;
+            if (!ReadString(is, key) || !Read(is, value)) return false;
+            kv[key] = value;
+        }
+        return true;
+    }
+
+    static void WriteKeyValues(std::ostream& os, const KeyValues& kv) {
+        Write(os, (uint32_t)kv.size());
+        for (auto& [key, value] : kv) {
+            WriteString(os, key);
+            Write(os, value);
+        }
+    }
+
+    static std::string PlayerKey(int player, const char* name) {
+        return "p" + std::to_string(player) + "." + name;
+    }
+
+    static std::string LookColorKey(int player, int game, int k) {
+        return "p" + std::to_string(player) + ".g" + std::to_string(game) + ".color" + std::to_string(k);
+    }
+
+    static std::string CharacterColorKey(int character, int k) {
+        return "c" + std::to_string(character) + ".color" + std::to_string(k);
+    }
+
+    static KeyValues CollectKeyValues() {
+        KeyValues kv;
+        auto& ms = s_state;
+        for (int i = 0; i < 4; ++i) {
+            kv[PlayerKey(i, "invert")] = ms.invert[i];
+            kv[PlayerKey(i, "invertFlight")] = ms.invertFlight[i];
+            kv[PlayerKey(i, "vibration")] = ms.vibration[i];
+            kv[PlayerKey(i, "controllerProfile")] = ms.controllerProfile[i]; // -1 doesn't fit the old block's readers
+            for (int g = 0; g < k_gameCount; ++g)
+                for (int k = 0; k < (int)s_lookColors[i][g].size() && k < k_lookColorCount; ++k)
+                    if (s_lookColors[i][g][k] >= 0)
+                        kv[LookColorKey(i, g, k)] = s_lookColors[i][g][k];
+        }
+        kv["anyoneCanPause"] = ms.anyoneCanPause ? 1 : 0;
+        kv["nativePlayStation"] = ms.nativePlayStation ? 1 : 0;
+        for (int c = 0; c < (int)s_characters.size(); ++c)
+            for (int k = 0; k < (int)s_characters[c].colors.size() && k < k_lookColorCount; ++k)
+                if (s_characters[c].colors[k] >= 0)
+                    kv[CharacterColorKey(c, k)] = s_characters[c].colors[k];
+        return kv;
+    }
+
+    static void ApplyKeyValues(const KeyValues& kv) {
+        auto get = [&](const std::string& key, int fallback) {
+            auto it = kv.find(key);
+            return it == kv.end() ? fallback : (int)it->second;
+        };
+        auto& ms = s_state;
+        for (int i = 0; i < 4; ++i) {
+            ms.invert[i] = std::clamp(get(PlayerKey(i, "invert"), ms.invert[i]), -1, 1);
+            ms.invertFlight[i] = std::clamp(get(PlayerKey(i, "invertFlight"), ms.invertFlight[i]), -1, 1);
+            ms.vibration[i] = std::clamp(get(PlayerKey(i, "vibration"), ms.vibration[i]), -1, 1);
+            ms.controllerProfile[i] = get(PlayerKey(i, "controllerProfile"), ms.controllerProfile[i]);
+            for (int g = 0; g < k_gameCount; ++g) {
+                std::vector<int> colors(k_lookColorCount, -1);
+                bool any = false;
+                for (int k = 0; k < k_lookColorCount; ++k) {
+                    colors[k] = get(LookColorKey(i, g, k), -1);
+                    any |= colors[k] >= 0;
+                }
+                if (any) s_lookColors[i][g] = std::move(colors);
+            }
+        }
+        ms.anyoneCanPause = get("anyoneCanPause", ms.anyoneCanPause) != 0;
+        ms.nativePlayStation = get("nativePlayStation", ms.nativePlayStation) != 0;
+        for (int c = 0; c < (int)s_characters.size(); ++c)
+            for (int k = 0; k < k_lookColorCount; ++k)
+                s_characters[c].colors[k] = get(CharacterColorKey(c, k), -1);
+    }
+
+    // A file from before version 9 has no "MCC" values: the settings it
+    // holds at their old defaults (look not inverted, sensitivity 3, Steel
+    // colors, player 1 on the Default profile) were never picked, and stopped
+    // the MCC profile's own from reaching the game. They become "MCC".
+    static void MigrateToMccDefaults(MenuState& ms) {
+        for (int i = 0; i < 4; ++i) {
+            if (ms.invert[i] == 0) ms.invert[i] = -1;
+            if (ms.sensitivity[i] == 3) ms.sensitivity[i] = 0;
+            auto& colors = ms.playerColors[i].colors;
+            if (colors[0] == 0 && colors[1] == 0 && colors[2] == 0)
+                colors[0] = colors[1] = colors[2] = -1;
+        }
+        if (ms.controllerProfile[0] == 0) ms.controllerProfile[0] = -1;
     }
 
     static void Load() {
@@ -277,7 +395,12 @@ namespace AlphaRing::MenuSettings {
         s_characters.clear();
         for (auto& player : s_armor)
             for (auto& armor : player) armor.clear();
+        for (auto& player : s_lookColors)
+            for (auto& colors : player) colors.clear();
         for (auto& name : s_playerNames) name.clear();
+        bool stateRead = false;
+        KeyValues kv;
+        bool kvRead = false;
 
         std::ifstream ifs(FilePath(), std::ios::binary);
         if (!ifs && GetFileAttributesA(FilePath().c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -290,8 +413,9 @@ namespace AlphaRing::MenuSettings {
         if (ifs && Read(ifs, magic)) {
             if (magic != k_magic) {
                 ifs.seekg(0);
-                ReadMenuState(ifs, s_state, 0);
+                stateRead = ReadMenuState(ifs, s_state, 0);
             } else if (Read(ifs, version) && ReadMenuState(ifs, s_state, version)) {
+                stateRead = true;
                 uint32_t count, buttons;
                 bool profilesRead = false;
                 if (Read(ifs, count) && count <= k_maxEntries) {
@@ -371,12 +495,21 @@ namespace AlphaRing::MenuSettings {
                     }
                     armorRead = p == count;
                 }
+                bool namesRead = false;
                 if (version >= 6 && armorRead && Read(ifs, count) && count <= 4) {
-                    for (uint32_t p = 0; p < count; ++p)
+                    uint32_t p = 0;
+                    for (; p < count; ++p)
                         if (!ReadString(ifs, s_playerNames[p])) break;
+                    namesRead = p == count;
                 }
+                if (version >= 9 && namesRead)
+                    kvRead = ReadKeyValues(ifs, kv);
             }
         }
+        if (kvRead)
+            ApplyKeyValues(kv);
+        else if (stateRead)
+            MigrateToMccDefaults(s_state);
 
         // First run, or a file from before the menus were united: the six
         // built-in profiles (with any overrides from alpha_ring_menu.cfg)
@@ -384,7 +517,7 @@ namespace AlphaRing::MenuSettings {
         if (s_profiles.empty())
             SeedProfiles();
         for (int& profile : s_state.controllerProfile)
-            if (profile < 0 || profile >= (int)s_profiles.size()) profile = 0;
+            if (profile < -1 || profile >= (int)s_profiles.size()) profile = 0;
     }
 
     static std::string ToUtf8(const wchar_t* text) {
@@ -456,8 +589,10 @@ namespace AlphaRing::MenuSettings {
     bool Save() {
         std::lock_guard lock(s_mutex);
         EnsureLoaded();
-        if (s_unreadable)
+        if (s_unreadable) {
+            Publish();
             return false;
+        }
 
         // Written next to the file and moved over it, so a crash mid-write
         // can't leave a truncated file behind.
@@ -505,12 +640,245 @@ namespace AlphaRing::MenuSettings {
             for (auto& name : s_playerNames)
                 WriteString(ofs, name);
 
+            WriteKeyValues(ofs, CollectKeyValues());
+
             if (!ofs.good()) return false;
         }
+        Publish();
         if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             LOG_WARNING("MenuSettings: can't replace {} ({})", path, GetLastError());
             return false;
         }
+        return true;
+    }
+
+    // ---------------------------------------------------------------- published copy
+    //
+    // The game asks for a player's profile and button layout from its own
+    // threads, often, and while holding its own locks; the menus hold Mutex()
+    // while calling into the game. So the game hooks never take Mutex(): they
+    // read this copy of what they need, which Publish() replaces under a lock
+    // held only for the copy.
+
+    struct PublishedPlayer {
+        int sensitivity;   // 0 = MCC's
+        int invert;        // -1 = MCC's
+        int invertFlight;
+        int vibration;
+        int profile;       // -1 = MCC's layout
+        ControllerProfileMapping buttons;
+        int namedColor[3]; // AlphaRing colors, -1 = none
+        int lookColors[k_gameCount][k_lookColorCount];
+        int armor[ArmorGameCount][k_armorValueCount];
+    };
+
+    struct Published {
+        bool valid;
+        bool shareLook;      // players 2-4 wear player 1's look
+        bool anyoneCanPause;
+        PublishedPlayer players[4];
+    };
+
+    static SRWLOCK s_publishLock = SRWLOCK_INIT;
+    static Published s_published{};
+
+    void Publish() {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        auto pub = std::make_unique<Published>();
+        auto& ms = s_state;
+        pub->valid = true;
+        pub->shareLook = ms.usePlayer0Profile;
+        pub->anyoneCanPause = ms.anyoneCanPause;
+        for (int i = 0; i < 4; ++i) {
+            auto& p = pub->players[i];
+            p.sensitivity = ms.sensitivity[i];
+            p.invert = ms.invert[i];
+            p.invertFlight = ms.invertFlight[i];
+            p.vibration = ms.vibration[i];
+            p.profile = (ms.controllerProfile[i] >= 0 && ms.controllerProfile[i] < (int)s_profiles.size()) ? ms.controllerProfile[i] : -1;
+            p.buttons = p.profile >= 0 ? s_profiles[p.profile].buttons : g_menuConfig.controllerProfiles[0];
+            for (int c = 0; c < 3; ++c) p.namedColor[c] = ms.playerColors[i].colors[c];
+            for (int g = 0; g < k_gameCount; ++g)
+                for (int k = 0; k < k_lookColorCount; ++k)
+                    p.lookColors[g][k] = k < (int)s_lookColors[i][g].size() ? s_lookColors[i][g][k] : -1;
+            for (int g = 0; g < ArmorGameCount; ++g) {
+                auto& values = s_armor[i][g];
+                for (int v = 0; v < k_armorValueCount; ++v)
+                    p.armor[g][v] = v < (int)values.size() ? values[v] : (v >= k_serviceTagValue ? 0 : -1);
+            }
+        }
+        AcquireSRWLockExclusive(&s_publishLock);
+        s_published = *pub;
+        ReleaseSRWLockExclusive(&s_publishLock);
+
+        // the PlayStation lightbars show whose controller each one is
+        AlphaRing::Input::PlayStation::SetEnabled(ms.nativePlayStation);
+        int slotPlayer[4] = {-1, -1, -1, -1};
+        for (int i = (std::min)(ms.playerCount, 4) - 1; i >= 0; --i) {
+            if (i == 0 && ms.useKM) continue;
+            int slot = ms.controllerIndex[i];
+            if (slot >= 0 && slot < 4) slotPlayer[slot] = i;
+        }
+        for (int slot = 0; slot < 4; ++slot)
+            AlphaRing::Input::PlayStation::SetSlotPlayer(slot, slotPlayer[slot]);
+    }
+
+    static bool ReadPublished(int player, PublishedPlayer& out, PublishedPlayer* lookOut, bool* shareLook) {
+        if (player < 0 || player >= 4) return false;
+        AcquireSRWLockShared(&s_publishLock);
+        bool valid = s_published.valid;
+        if (valid) {
+            out = s_published.players[player];
+            if (shareLook) *shareLook = s_published.shareLook && player > 0;
+            if (lookOut) *lookOut = s_published.players[0];
+        }
+        ReleaseSRWLockShared(&s_publishLock);
+        return valid;
+    }
+
+    bool AnyoneCanPause() {
+        AcquireSRWLockShared(&s_publishLock);
+        bool result = s_published.valid && s_published.anyoneCanPause;
+        ReleaseSRWLockShared(&s_publishLock);
+        return result;
+    }
+
+    bool VibrationOff(int player) {
+        if (player < 0 || player >= 4) return false;
+        AcquireSRWLockShared(&s_publishLock);
+        bool result = s_published.valid && s_published.players[player].vibration == 0;
+        ReleaseSRWLockShared(&s_publishLock);
+        return result;
+    }
+
+    // `values` (a look's armor, Armor() layout) over `profile`, for ArmorGame `game`.
+    static bool LayArmor(const int* values, int game, CUserProfile& profile) {
+        bool changed = false;
+        for (int v = 1; v < k_serviceTagValue; ++v) {
+            if (values[v] < 0) continue;
+            // never an item from another game, whatever the file holds
+            if (IsItemValue(v) && ArmorGameOfItem(values[v]) != game) continue;
+            profile.*(k_characterFields[v - 1].field) = values[v];
+            changed = true;
+        }
+        if (values[k_serviceTagValue] != 0) {
+            for (int i = 0; i < k_serviceTagLength; ++i)
+                profile.ServiceTag[i] = (wchar_t)values[k_serviceTagValue + i];
+            changed = true;
+        }
+        return changed;
+    }
+
+    static void ColorFields(CUserProfile& p, int* (&fields)[k_lookColorCount]) {
+        fields[0] = &p.PlayerModelPrimaryColorIndex;
+        fields[1] = &p.PlayerModelSecondaryColorIndex;
+        fields[2] = &p.PlayerModelTertiaryColorIndex;
+        fields[3] = &p.PlayerModelPrimaryColor;
+        fields[4] = &p.PlayerModelSecondaryColor;
+        fields[5] = &p.PlayerModelTertiaryColor;
+    }
+
+    // A look: copied armor, then copied colors, then colors picked in a menu.
+    static bool LayLook(const PublishedPlayer& look, int game, CUserProfile& profile) {
+        bool changed = false;
+        int armorGame = ArmorGameOf(game);
+        if (armorGame >= 0)
+            changed |= LayArmor(look.armor[armorGame], armorGame, profile);
+        int* fields[k_lookColorCount];
+        ColorFields(profile, fields);
+        if (game >= 0 && game < k_gameCount) {
+            for (int k = 0; k < k_lookColorCount; ++k) {
+                if (look.lookColors[game][k] < 0) continue;
+                *fields[k] = look.lookColors[game][k];
+                changed = true;
+            }
+            for (int c = 0; c < 3; ++c) {
+                int color = look.namedColor[c];
+                if (color < 0 || color >= CXboxColorMapping::kColorCount) continue;
+                *fields[c] = CXboxColorMapping::GetColorIndex(color, game);
+                *fields[c + 3] = CXboxColorMapping::GetColorItemIndex(color, game);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    bool ComposeProfile(int player, const CUserProfile& base, CUserProfile& out, int game) {
+        if (&out != &base)
+            memcpy(&out, &base, sizeof(CUserProfile));
+        PublishedPlayer p, first;
+        bool shareLook = false;
+        if (!ReadPublished(player, p, &first, &shareLook))
+            return false;
+
+        bool changed = LayLook(shareLook ? first : p, game, out);
+        if (p.sensitivity > 0) {
+            out.VerticalLookSensitivity = (unsigned char)p.sensitivity;
+            out.HorizontalLookSensitivity = (unsigned char)p.sensitivity;
+            changed = true;
+        }
+        if (p.invert >= 0) {
+            out.LookControlsInverted = p.invert == 1;
+            out.MouseLookControlsInverted = p.invert == 1;
+            changed = true;
+        }
+        if (p.invertFlight >= 0) {
+            out.AircraftControlsInverted = p.invertFlight == 1;
+            out.MouseAircraftControlsInverted = p.invertFlight == 1;
+            changed = true;
+        }
+        if (p.vibration >= 0) {
+            out.VibrationDisabled = p.vibration == 0;
+            out.ImpulseTriggersDisabled = p.vibration == 0;
+            changed = true;
+        }
+        return changed;
+    }
+
+    // Actions outside a controller profile that are used on foot, where a
+    // button a profile moves onto them would do two things at once. Vehicle,
+    // Forge and Theater actions share buttons with on-foot ones by design.
+    static bool IsOnFootAction(int action) {
+        switch (action) {
+            case 11: case 12: case 14: case 55: case 56: case 57: case 58:
+            case 59: case 60: case 61: case 64: case 65:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static void LayProfile(const ControllerProfileMapping& buttons, const CGamepadMapping& base, CGamepadMapping& mapping) {
+        // the buttons the profile puts on an action that MCC has elsewhere
+        bool moved[17] = {};
+        for (auto& binding : k_profileBindings) {
+            auto button = buttons.*binding.field;
+            mapping.actions[binding.action] = button;
+            if (button != CGamepadMapping::None && button != base.actions[binding.action] && button >= 0 && button < 16)
+                moved[button] = true;
+        }
+        // Everything else keeps MCC's button (Sprint, loadouts, vehicle and
+        // Forge actions...), unless the profile now uses that button on foot.
+        for (int a = 0; a < (int)std::size(mapping.actions); ++a) {
+            if (IsProfileAction(a) || !IsOnFootAction(a)) continue;
+            auto button = base.actions[a];
+            if (button >= 0 && button < 16 && moved[button])
+                mapping.actions[a] = CGamepadMapping::None;
+        }
+        // Player Move Forward/Backward/Left/Right (H1A, actions 16-19) stay
+        // unbound — movement is handled by the analog stick, not the D-Pad.
+        for (int a = 16; a <= 19; ++a)
+            mapping.actions[a] = CGamepadMapping::None;
+    }
+
+    bool ComposeMapping(int player, const CGamepadMapping& base, CGamepadMapping& out) {
+        if (&out != &base)
+            memcpy(&out, &base, sizeof(CGamepadMapping));
+        PublishedPlayer p;
+        if (!ReadPublished(player, p, nullptr, nullptr) || p.profile < 0)
+            return false;
+        LayProfile(p.buttons, base, out);
         return true;
     }
 
@@ -520,16 +888,10 @@ namespace AlphaRing::MenuSettings {
         std::lock_guard lock(s_mutex);
         auto& profiles = Profiles();
         if (profileIndex < 0 || profileIndex >= (int)profiles.size())
-            profileIndex = 0;
-
-        // Also leaves Player Move Forward/Backward/Left/Right (H1A, actions 16-19)
-        // unbound — movement is handled by the analog stick, not the D-Pad.
-        for (auto& action : mapping.actions)
-            action = CGamepadMapping::None;
-
-        const ControllerProfileMapping& p = profiles[profileIndex].buttons;
-        for (auto& binding : k_profileBindings)
-            mapping.actions[binding.action] = p.*binding.field;
+            return; // MCC's layout: as it is
+        CGamepadMapping base;
+        memcpy(&base, &mapping, sizeof(base));
+        LayProfile(profiles[profileIndex].buttons, base, mapping);
     }
 
     bool IsProfileAction(int action) {
@@ -539,20 +901,13 @@ namespace AlphaRing::MenuSettings {
 
     void ApplyPlayerControls(int player) {
         std::lock_guard lock(s_mutex);
-        auto profile = CGameManager::get_profile(player);
-        if (!profile) return;
-        auto& ms = State();
-        profile->controller_index = ms.controllerIndex[player];
-        profile->profile.LookControlsInverted = ms.invert[player];
-        profile->profile.MouseLookControlsInverted = ms.invert[player];
-        profile->profile.VerticalLookSensitivity = static_cast<unsigned char>(ms.sensitivity[player]);
-        profile->profile.HorizontalLookSensitivity = static_cast<unsigned char>(ms.sensitivity[player]);
+        if (auto profile = CGameManager::get_profile(player))
+            profile->controller_index = State().controllerIndex[player];
+        Publish();
     }
 
     void ApplyPlayerMapping(int player) {
-        std::lock_guard lock(s_mutex);
-        if (auto profile = CGameManager::get_profile(player))
-            ApplyControllerProfile(State().controllerProfile[player], profile->mapping);
+        Publish();
     }
 
     void ApplyPlayerTeam(int player) {
@@ -570,18 +925,7 @@ namespace AlphaRing::MenuSettings {
     }
 
     void ApplyPlayerColors(int player) {
-        std::lock_guard lock(s_mutex);
-        auto profile = CGameManager::get_profile(player);
-        if (!profile) return;
-        auto* gg = GameGlobal();
-        int game = gg ? static_cast<int>(gg->current_game) : static_cast<int>(CGameGlobal::Halo3);
-        const auto& colors = State().playerColors[player].colors;
-        profile->profile.PlayerModelPrimaryColorIndex   = CXboxColorMapping::GetColorIndex(colors[0], game);
-        profile->profile.PlayerModelSecondaryColorIndex = CXboxColorMapping::GetColorIndex(colors[1], game);
-        profile->profile.PlayerModelTertiaryColorIndex  = CXboxColorMapping::GetColorIndex(colors[2], game);
-        profile->profile.PlayerModelPrimaryColor        = CXboxColorMapping::GetColorItemIndex(colors[0], game);
-        profile->profile.PlayerModelSecondaryColor      = CXboxColorMapping::GetColorItemIndex(colors[1], game);
-        profile->profile.PlayerModelTertiaryColor       = CXboxColorMapping::GetColorItemIndex(colors[2], game);
+        Publish();
     }
 
     void ApplySplitscreen(bool atGameStart) {
@@ -596,9 +940,10 @@ namespace AlphaRing::MenuSettings {
         p_setting->player_count = ms.playerCount;
         p_setting->b_player0_use_km = ms.useKM;
         p_setting->b_use_player0_profile = ms.usePlayer0Profile;
-        MATCH_LOG("ApplySplitscreen(atGameStart={}): override={} player_count={} p1_km={} use_p1_profile={}",
+        MATCH_LOG("ApplySplitscreen(atGameStart={}): override={} player_count={} p1_km={} use_p1_look={}",
                   atGameStart, p_setting->b_override, p_setting->player_count, p_setting->b_player0_use_km,
                   p_setting->b_use_player0_profile);
+        Publish();
     }
 
     static bool TeamChangeLeavesMatch() {
@@ -608,20 +953,16 @@ namespace AlphaRing::MenuSettings {
 
     void ApplyAll(bool atGameStart, const int* previousTeams) {
         std::lock_guard lock(s_mutex);
-        for (int i = 0; i < 4; ++i) {
-            ApplyPlayerControls(i);
-            ApplyPlayerMapping(i);
-        }
-        ApplySplitscreen(atGameStart);
+        for (int i = 0; i < 4; ++i)
+            if (auto profile = CGameManager::get_profile(i))
+                profile->controller_index = State().controllerIndex[i];
+        ApplySplitscreen(atGameStart); // publishes
         bool picked_only = TeamChangeLeavesMatch();
         for (int i = 0; i < 4; ++i) {
             if (!picked_only || (previousTeams && previousTeams[i] != State().teamIndex[i]))
                 ApplyPlayerTeam(i);
             else
                 MATCH_LOG("change_team player={} held back: Halo 4/H2A take it once the match is running", i);
-            ApplyPlayerColors(i);
-            if (auto profile = CGameManager::get_profile(i))
-                ApplyArmor(i, profile->profile);
         }
     }
 
@@ -642,6 +983,53 @@ namespace AlphaRing::MenuSettings {
         return (int)profiles.size() - 1;
     }
 
+    // The first CGamepadMapping action a profile action sets (its mirrors follow it).
+    static int MappingActionOf(int profileAction) {
+        auto field = k_profileActions[std::clamp(profileAction, 0, k_profileActionCount - 1)].field;
+        for (auto& binding : k_profileBindings)
+            if (binding.field == field) return binding.action;
+        return -1;
+    }
+
+    ControllerProfileMapping MccButtons() {
+        ControllerProfileMapping buttons = g_menuConfig.controllerProfiles[0];
+        auto* mng = GameManager();
+        if (!mng || !MCC::IsInGame()) return buttons;
+        auto xuid = CGameManager::get_xuid(0);
+        auto* base = xuid ? CGameManager::ppOriginal.retrive_gamepad_mapping(mng, xuid) : nullptr;
+        if (!base) return buttons;
+        for (int a = 0; a < k_profileActionCount; ++a) {
+            int action = MappingActionOf(a);
+            if (action >= 0) ProfileButton(buttons, a) = base->actions[action];
+        }
+        return buttons;
+    }
+
+    int OwnProfile(int player, MenuState& ms) {
+        std::lock_guard lock(s_mutex);
+        auto& profiles = Profiles();
+        if (player < 0 || player >= 4) return -1;
+        int current = ms.controllerProfile[player];
+        bool shared = false;
+        for (int i = 0; i < 4; ++i)
+            shared |= i != player && ms.controllerProfile[i] == current;
+        if (current >= 0 && current < (int)profiles.size() && profiles[current].builtin < 0 && !shared)
+            return current;
+
+        ControllerProfileMapping buttons = (current >= 0 && current < (int)profiles.size()) ? profiles[current].buttons : MccButtons();
+        std::string base;
+        auto* profile = CGameManager::get_profile(player);
+        base = profile && profile->name[0] ? ToUtf8(profile->name) : "Player " + std::to_string(player + 1);
+        if (base.size() > 64) base.resize(64);
+        base += "'s Controls";
+        std::string name = base;
+        for (int n = 2; std::any_of(profiles.begin(), profiles.end(), [&](const ControllerProfile& p) { return p.name == name; }); ++n)
+            name = base + " " + std::to_string(n);
+        int index = AddProfile(name, buttons);
+        ms.controllerProfile[player] = index;
+        return index;
+    }
+
     void DeleteProfile(int index) {
         std::lock_guard lock(s_mutex);
         auto& profiles = Profiles();
@@ -652,11 +1040,11 @@ namespace AlphaRing::MenuSettings {
             int& selected = State().controllerProfile[i];
             if (selected == index) {
                 selected = 0;
-                ApplyPlayerMapping(i);
             } else if (selected > index) {
                 --selected;
             }
         }
+        Publish();
     }
 
     void ResetProfile(int index) {
@@ -669,10 +1057,7 @@ namespace AlphaRing::MenuSettings {
     }
 
     void ReapplyProfile(int index) {
-        std::lock_guard lock(s_mutex);
-        for (int i = 0; i < 4; ++i)
-            if (State().controllerProfile[i] == index)
-                ApplyPlayerMapping(i);
+        Publish();
     }
 
     // ---------------------------------------------------------------- characters
@@ -716,6 +1101,101 @@ namespace AlphaRing::MenuSettings {
         }
     }
 
+    int CurrentGame() {
+        auto* gg = GameGlobal();
+        if (!gg || !MCC::IsInGame()) return -1;
+        int game = (int)gg->current_game;
+        return (game >= 0 && game < k_gameCount) ? game : -1;
+    }
+
+    int ArmorGameOf(int game) {
+        switch (game) {
+            case CGameGlobal::GroundHog: return ArmorHalo2A;
+            case CGameGlobal::Halo3:     return ArmorHalo3;
+            case CGameGlobal::HaloReach: return ArmorReach;
+            case CGameGlobal::Halo4:     return ArmorHalo4;
+            default:                     return -1;
+        }
+    }
+
+    int GameOfArmorGame(int armorGame) {
+        static const int games[ArmorGameCount] = {CGameGlobal::GroundHog, CGameGlobal::Halo3, CGameGlobal::HaloReach, CGameGlobal::Halo4};
+        return (armorGame >= 0 && armorGame < ArmorGameCount) ? games[armorGame] : -1;
+    }
+
+    std::vector<int>& LookColors(int player, int game) {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        auto& colors = s_lookColors[std::clamp(player, 0, 3)][std::clamp(game, 0, k_gameCount - 1)];
+        if ((int)colors.size() < k_lookColorCount)
+            colors.resize(k_lookColorCount, -1);
+        return colors;
+    }
+
+    bool CaptureLook(int player, MenuState* ms) {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        int game = CurrentGame();
+        auto* mng = GameManager();
+        if (player < 0 || player >= 4 || game < 0 || !mng) return false;
+        auto xuid = CGameManager::get_xuid(0);
+        auto* live = xuid ? CGameManager::ppOriginal.get_player_profile(mng, xuid) : nullptr;
+        if (!live) return false;
+        CUserProfile base;
+        memcpy(&base, live, sizeof(base));
+
+        int* fields[k_lookColorCount];
+        ColorFields(base, fields);
+        auto& colors = LookColors(player, game);
+        for (int k = 0; k < k_lookColorCount; ++k)
+            colors[k] = *fields[k];
+
+        int armorGame = ArmorGameOf(game);
+        if (armorGame >= 0) {
+            auto armor = EmptyArmor();
+            for (int v = 1; v < k_serviceTagValue; ++v) {
+                int value = base.*(k_characterFields[v - 1].field);
+                if (IsItemValue(v) && (value < 0 || ArmorGameOfItem(value) != armorGame)) continue;
+                armor[v] = value;
+            }
+            for (int i = 0; i < k_serviceTagLength; ++i)
+                armor[k_serviceTagValue + i] = (int)base.ServiceTag[i];
+            s_armor[player][armorGame] = std::move(armor);
+        }
+
+        auto& picked = (ms ? *ms : s_state).playerColors[player].colors;
+        picked[0] = picked[1] = picked[2] = -1;
+        if (ms != &s_state) s_state.playerColors[player] = (ms ? *ms : s_state).playerColors[player];
+        LOG_INFO("MenuSettings: player {} took the MCC look of game {} (colors {} {} {})", player + 1, game,
+                 colors[0], colors[1], colors[2]);
+        Publish();
+        return true;
+    }
+
+    void ClearLook(int player, MenuState* ms) {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        if (player < 0 || player >= 4) return;
+        int game = CurrentGame();
+        for (int g = 0; g < k_gameCount; ++g)
+            if (game < 0 || g == game) s_lookColors[player][g].clear();
+        for (int g = 0; g < ArmorGameCount; ++g)
+            if (game < 0 || GameOfArmorGame(g) == game) s_armor[player][g].clear();
+        auto& picked = (ms ? *ms : s_state).playerColors[player].colors;
+        picked[0] = picked[1] = picked[2] = -1;
+        s_state.playerColors[player] = (ms ? *ms : s_state).playerColors[player];
+        Publish();
+    }
+
+    bool HasLook(int player) {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        int game = CurrentGame();
+        if (player < 0 || player >= 4 || game < 0) return false;
+        for (int c : s_lookColors[player][game]) if (c >= 0) return true;
+        return HasArmor(player, ArmorGameOf(game));
+    }
+
     std::vector<int>& Armor(int player, int game) {
         std::lock_guard lock(s_mutex);
         EnsureLoaded();
@@ -749,8 +1229,12 @@ namespace AlphaRing::MenuSettings {
     void ClearArmor(int player, int game) {
         std::lock_guard lock(s_mutex);
         EnsureLoaded();
-        if (player >= 0 && player < 4 && game >= 0 && game < ArmorGameCount)
+        if (player >= 0 && player < 4 && game >= 0 && game < ArmorGameCount) {
             s_armor[player][game].clear();
+            int g = GameOfArmorGame(game);
+            if (g >= 0) s_lookColors[player][g].clear();
+        }
+        Publish();
     }
 
     void ApplyArmor(int player, CUserProfile& profile) {
@@ -771,9 +1255,13 @@ namespace AlphaRing::MenuSettings {
                 profile.ServiceTag[i] = (wchar_t)values[k_serviceTagValue + i];
     }
 
-    int SaveCharacter(const std::string& name, int game, const std::vector<int>& armor, const wchar_t* playerName) {
+    int SaveCharacter(const std::string& name, int game, const std::vector<int>& armor, const wchar_t* playerName,
+                      const std::vector<int>* colors) {
         std::lock_guard lock(s_mutex);
         Character character{name, armor, ToUtf8(playerName), game};
+        if (colors)
+            for (int k = 0; k < k_lookColorCount && k < (int)colors->size(); ++k)
+                character.colors[k] = (*colors)[k];
 
         auto& characters = Characters();
         for (int i = 0; i < (int)characters.size(); ++i) {
@@ -795,8 +1283,15 @@ namespace AlphaRing::MenuSettings {
         auto& armor = Armor(player, character.game);
         armor = EmptyArmor();
         std::copy_n(character.values.begin(), (std::min)(character.values.size(), armor.size()), armor.begin());
-        if (!character.playerName.empty() && playerNameSize > 0)
+        int game = GameOfArmorGame(character.game);
+        if (game >= 0) {
+            auto& colors = LookColors(player, game);
+            for (int k = 0; k < k_lookColorCount; ++k)
+                colors[k] = k < (int)character.colors.size() ? character.colors[k] : -1;
+        }
+        if (!character.playerName.empty() && playerName && playerNameSize > 0)
             FromUtf8(character.playerName, playerName, playerNameSize);
+        Publish();
     }
 
     void DeleteCharacter(int index) {
