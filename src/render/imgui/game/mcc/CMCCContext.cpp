@@ -8,9 +8,11 @@
 
 static const char* tutorial_message = R"(TUTORIAL:
 
-Press "F4" or "Start + Back" to toggle the menu.
+Press "F4" or "Start + Left Stick Click" on any controller for the Xbox menu,
+which opens on that controller's player page. "F1" or "Start + Right Stick Click"
+toggles this menu.
 
-To navigate using Controller use the "Right Stick" to move the mouse and "RB" to click.
+To navigate this menu with a controller use the "Right Stick" to move the mouse and "RB" to click.
 
 Having this menu open will disable inputs or pause the game.
 )";

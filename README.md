@@ -57,11 +57,36 @@ Works with **any Proton version** (Proton 9.0, Proton Experimental, Proton GE, e
 > **Note:** Tested on Batocera Linux with the unofficial Batocera add-ons Steam client.
 
 ### Usage
-Toggle menu: `F4` or `Controller Back` + `Controller Start`
+Toggle menu: `F4` or `Start` + `Left Stick Click` on any controller (advanced menu: `F1` or `Start` + `Right Stick Click`)
 
 To navigate using Controller use the `Right Stick` to move the mouse and `RB` to click.
 
 When the menu is open, game input is disabled.
+
+### Splitscreen Guide (per-player settings)
+
+Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**. Opened from a controller, it starts on that player's page, so each player can set up their own controls. `A` selects, `B` goes back (out of a list first, then closes and applies).
+
+**Splitscreen page**
+- **Add/Remove Player** - number of players (1-4).
+- **Assign Controllers** - each player in turn presses any button on their controller.
+- **Use K/M for Player 1**, **Copy Player 1's Look** (players 2-4 wear player 1's armor; controls stay their own).
+- **Anyone Can Pause** - Start on any player's controller opens the pause menu (sends Escape when player 1 is on keyboard/mouse).
+- **PlayStation Controllers** - DualShock 4 / DualSense support (see below).
+
+**Player pages** - everything here is per player. "MCC" means "use what's set in MCC's own settings".
+- **Controller** - which controller this player uses, or *Press a Button to Assign*.
+- **Controller Profile** - *MCC Settings* (the buttons from MCC's controller settings), the presets (Default, Southpaw, Boxer, Green Thumb, Bumper Jumper, Recon) or your own profiles.
+- **Edit My Buttons** - pick an action, then press the button you want for it on your controller. The first edit copies the preset into a profile of your own ("<name>'s Controls"), so the presets and the other player's controls never change. Actions not in the list (Sprint, vehicle and Forge controls...) keep MCC's buttons.
+- **Sensitivity** (`MCC` or 1-20), **Look** and **Flying** inversion, **Vibration** (MCC / Off / On).
+- **Primary/Secondary/Tertiary Color** - a fixed color, or *From My Look / MCC*.
+- **Look & Armor** - per game:
+  - *Copy My Look From MCC Now* (during a match): this player takes the armor, colors and service tag currently set in MCC's Customize menu.
+  - *Use MCC's Look*, *Save My Look as a Character*, *Wear: <character>*.
+
+**Giving each player their own armor:** MCC only has one profile, so set it up one player at a time. Player 2 sets MCC's Customize menu to their look, starts a match, and uses *Look & Armor → Copy My Look From MCC Now* on their page. Afterwards set MCC's customization back to player 1's look (player 1 follows MCC unless they copy a look too). Each look is saved per game. The advanced menu (`F1` → Splitscreen → a player → Armor) has full per-piece armor pickers too.
+
+**PlayStation controllers (no DS4Windows needed):** turn the controller on (USB or Bluetooth-paired in Windows) and it shows up as the next free controller, with rumble and its lightbar in the player's color (blue, red, green, pink). If a controller's buttons arrive twice, another program is also translating it: close DS4Windows, or disable Steam Input for MCC (MCC → Properties → Controller → *Disable Steam Input*), or turn **PlayStation Controllers** off to keep using those.
 
 ---
 
