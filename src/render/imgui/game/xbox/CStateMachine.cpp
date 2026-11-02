@@ -394,7 +394,7 @@ void StateMachine::refreshSubpage() {
             int game = Settings::CurrentGame();
             int armorGame = Settings::ArmorGameOf(game);
             option.subOptions.clear();
-            option.addOption(Option(game >= 0 ? "Copy My Look From MCC Now" : "Copy My Look From MCC (in a match)", OptionType::SubpageOption, Menu::k_subLook));
+            option.addOption(Option(game >= 0 ? "Copy My Look From MCC Now" : "Copy My Look From MCC (in a mission or match)", OptionType::SubpageOption, Menu::k_subLook));
             option.addOption(Option("Use MCC's Look", OptionType::SubpageOption, Menu::k_subLook));
             option.addOption(Option("Save My Look as a Character", OptionType::SubpageOption, Menu::k_subLook));
             currentState.lookCharacters.clear();
@@ -450,15 +450,15 @@ bool StateMachine::handleSubOptionStays() {
             int armorGame = Settings::ArmorGameOf(game);
             if (index == Menu::k_lookCopy) {
                 if (Settings::CaptureLook(player, &ms))
-                    AlphaRing::Toast::Show("Player %d now wears MCC's current look", player + 1);
+                    AlphaRing::Toast::Show("Player %d now wears MCC's current look (if it doesn't show yet: next checkpoint or respawn)", player + 1);
                 else
-                    AlphaRing::Toast::Show("Start a match first: the look is copied from the game being played");
+                    AlphaRing::Toast::Show("Start a mission or match first: the look is copied for the game being played");
             } else if (index == Menu::k_lookClear) {
                 Settings::ClearLook(player, &ms);
                 AlphaRing::Toast::Show("Player %d wears MCC's look", player + 1);
             } else if (index == Menu::k_lookSave) {
                 if (armorGame < 0) {
-                    AlphaRing::Toast::Show("Characters are for Halo 2A, 3, Reach and 4 matches");
+                    AlphaRing::Toast::Show("Characters are for Halo 2A, 3, Reach and 4 (in other games your copied colors are kept per game)");
                 } else {
                     auto profile = CGameManager::get_profile(player);
                     std::string name = Settings::CharacterName(profile ? profile->name : L"Player");

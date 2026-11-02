@@ -81,10 +81,12 @@ Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**
 - **Sensitivity** (`MCC` or 1-20), **Look** and **Flying** inversion, **Vibration** (MCC / Off / On).
 - **Primary/Secondary/Tertiary Color** - a fixed color, or *From My Look / MCC*.
 - **Look & Armor** - per game:
-  - *Copy My Look From MCC Now* (during a match): this player takes the armor, colors and service tag currently set in MCC's Customize menu.
+  - *Copy My Look From MCC Now* (during a campaign mission or a match): this player takes the armor, colors and service tag currently set in MCC's Customize menu for that game.
   - *Use MCC's Look*, *Save My Look as a Character*, *Wear: <character>*.
 
-**Giving each player their own armor:** MCC only has one profile, so set it up one player at a time. Player 2 sets MCC's Customize menu to their look, starts a match, and uses *Look & Armor → Copy My Look From MCC Now* on their page. Afterwards set MCC's customization back to player 1's look (player 1 follows MCC unless they copy a look too). Each look is saved per game. The advanced menu (`F1` → Splitscreen → a player → Armor) has full per-piece armor pickers too.
+**Giving each player their own armor:** MCC only has one profile, so set it up one player at a time. Player 2 sets MCC's Customize menu to their look, starts a mission (or match), and uses *Look & Armor → Copy My Look From MCC Now* on their page. Afterwards set MCC's customization back to player 1's look (player 1 follows MCC unless they copy a look too). Each look is saved per game, so this is done once per game. If a new look doesn't appear right away, it shows after the next checkpoint load, respawn or mission restart. The advanced menu (`F1` → Splitscreen → a player → Armor) has full per-piece armor pickers too.
+
+**Campaign:** everything above works the same in campaign missions as in multiplayer. What a game shows of a player's customization in co-op is up to that game (Reach shows the full Spartan armor; games with fixed characters, such as Halo 3's Arbiter and Elites, show less or nothing). For colors, *Copy My Look From MCC* is the most reliable way, as it takes MCC's exact values instead of the menu's 30-color table.
 
 **PlayStation controllers (no DS4Windows needed):** turn the controller on (USB or Bluetooth-paired in Windows) and it shows up as the next free controller, with rumble and its lightbar in the player's color (blue, red, green, pink). If a controller's buttons arrive twice, another program is also translating it: close DS4Windows, or disable Steam Input for MCC (MCC → Properties → Controller → *Disable Steam Input*), or turn **PlayStation Controllers** off to keep using those.
 

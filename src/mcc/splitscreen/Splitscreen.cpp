@@ -484,7 +484,7 @@ namespace MCC::Splitscreen {
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Gives this player the armor, colors and service tag set in MCC right now, for the game being played.\n"
-                                  "Change MCC's customization between matches to give each player a different look.");
+                                  "Change MCC's customization between missions/matches to give each player a different look.");
             ImGui::SameLine();
             if (ImGui::Button("Use MCC Look")) {
                 Settings::ClearLook(index);
@@ -492,7 +492,7 @@ namespace MCC::Splitscreen {
                 ReloadSettings();
             }
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Drops this player's look (for the game being played, or all games outside a match)");
+                ImGui::SetTooltip("Drops this player's look (for the game being played, or all games when none is loaded)");
             for (int game = 0; game < Settings::ArmorGameCount; ++game) {
                 ImGui::PushID(game);
                 if (ImGui::CollapsingHeader(Settings::ArmorGameName(game))) {
