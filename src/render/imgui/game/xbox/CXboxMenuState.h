@@ -30,4 +30,5 @@ struct MenuState {
     bool nativePlayStation;   // DualShock 4 / DualSense read directly (USB and Bluetooth)
     int deadzone[4];          // extra stick deadzone in percent, 0 = none (for drifting sticks)
     bool halo2CompositeClip;  // #23's Halo 2 Anniversary view-quad clip (off: see Global.h)
+    bool classicGraphics3P;   // Halo CE/2 missions with 3-4 players start in Classic graphics
 };

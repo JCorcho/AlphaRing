@@ -21,6 +21,7 @@ DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_HAND_OVER, 0x5153E)
 // In the main loop's quit handling (0x679CD0): call 0x6A6320 (did this game come from a Halo 2 lobby?), then
 // test al, al / je - true loads the main-menu map to go back to that lobby, false quits to MCC.
 DefOffset(OFFSET_HALO2_PF_QUIT_TO_LOBBY_TEST, 0x679EE0)
+DefOffset(OFFSET_HALO2_PF_COPY_GAME_OPTIONS, 0x39CE0) // copy_game_options(game_options): bit 0 of the first byte = Anniversary graphics
 
 // void (void*) - each tick: in a campaign, a player flagged +6 & 8 spawns at a starting location; the others waiting
 // come back through the co-op respawn (0x6A1320: player_spawn, then moved beside a teammate out of combat)

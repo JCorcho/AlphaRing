@@ -69,6 +69,8 @@ namespace AlphaRing::Global {
             // #23's composite clip (render/d3d11/Hook.cpp): off, as it squeezes
             // Halo 2 Anniversary's two views into quarters on most machines.
             bool b_halo2_composite_clip = false;
+            // Halo CE/2 missions with 3-4 players start in Classic graphics (Splitscreen.h).
+            bool b_classic_graphics_3p = false;
         };
     }
 }

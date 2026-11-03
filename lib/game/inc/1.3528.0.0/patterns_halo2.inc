@@ -41,4 +41,7 @@ const OffsetPatterns kHalo2Patterns[] = {
     {&OFFSET_HALO2_PV_SCENARIO, 0xe6f768, Data, {
         Rel("48 8B 05 ?? ?? ?? ?? 8B DE 48 89 7C 24 68 39 98 10 02 00 00", 0x3, 0x7, 0x0),
         Rel("48 8B 05 ?? ?? ?? ?? 33 D2 4C 63 80 6C 01 00 00 41 83 F8 FF", 0x3, 0x7, 0x0)}},
+    {&OFFSET_HALO2_PF_COPY_GAME_OPTIONS, 0x39ce0, Code, {
+        At("40 53 48 81 EC 30 03 00 00 48 8B D1 48 8D 1D ?? ?? ?? ?? 48 8B CB", 0x0),
+        Rel("48 8B CF E8 ?? ?? ?? ?? 8B 4F 10 E8 ?? ?? ?? ?? B9 10 00 00 00 48 89 05", 0x4, 0x8, 0x0)}},
 };

@@ -7,6 +7,7 @@
 #include <offset_mcc.h>
 
 #include "../CGameManager.h"
+#include "../CGameGlobal.h"
 #include "log/MatchLog.h"
 
 namespace MCC::Splitscreen {
@@ -37,6 +38,23 @@ namespace MCC::Splitscreen {
         assertm(result, "MCC:Splitscreen: failed to hook");
 
         return true;
+    }
+
+    ClassicGraphicsScope::ClassicGraphicsScope(unsigned char* game_options, int game) {
+        auto p_setting = AlphaRing::Global::MCC::Splitscreen();
+        if (!p_setting->b_override || !p_setting->b_classic_graphics_3p || game_options == nullptr) return;
+        if (p_setting->player_count <= 2) return;
+        if (!(game_options[0] & 1)) return; // Classic already
+
+        LOG_INFO("Splitscreen: {} players in {}: starting in Classic graphics (Anniversary draws two views only)",
+                 p_setting->player_count, game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2");
+        m_options = game_options;
+        m_saved = game_options[0];
+        game_options[0] &= ~1;
+    }
+
+    ClassicGraphicsScope::~ClassicGraphicsScope() {
+        if (m_options) m_options[0] = m_saved;
     }
 }
 
@@ -651,6 +669,13 @@ namespace MCC::Splitscreen {
                     Settings::Save();
                 if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
                     Settings::Save();
+                if (ImGui::MenuItem("Halo CE/2: Classic graphics with 3-4 players", nullptr, &ms.classicGraphics3P)) {
+                    Settings::ApplySplitscreen(false);
+                    Settings::Save();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Anniversary graphics in Halo CE and Halo 2 can only draw two views, so with 3-4 players a mission\n"
+                                      "starts in Classic graphics, where everyone gets a view. Back/Tab still switches mid-mission.");
                 if (ImGui::MenuItem("Halo 2 Anniversary view clip (#23)", nullptr, &ms.halo2CompositeClip)) {
                     Settings::ApplySplitscreen(false);
                     Settings::Save();

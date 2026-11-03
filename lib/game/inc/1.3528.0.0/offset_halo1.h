@@ -3,6 +3,7 @@
 #include "Offset.h"
 
 DefOffset(OFFSET_HALO1_PF_RENDER, 0x1F05B0)
+DefOffset(OFFSET_HALO1_PF_GAME_START, 0x939D0) // engine game_start(self, manager, game_options): bit 0 of the first byte = Anniversary graphics
 
 DefOffset(OFFSET_HALO1_PF_4PLAYERS, 0x67492)
 DefOffset(OFFSET_HALO1_PF_PAUSE, 0x427978)

@@ -14,4 +14,6 @@ const OffsetPatterns kHalo1Patterns[] = {
     {&OFFSET_HALO1_PV_PLAYER_COUNT, 0x1b7b910, Data, {
         Rel("0F BF 15 ?? ?? ?? ?? 45 33 FF 48 63 F8 45 8D 77 01 41 2B D6", 0x3, 0x7, 0x0),
         Rel("0F B7 05 ?? ?? ?? ?? 66 89 81 24 01 00 00 0F B7 8A 58 01 00 00", 0x3, 0x7, 0x0)}},
+    {&OFFSET_HALO1_PF_GAME_START, 0x939d0, Code, {
+        At("40 53 56 57 48 81 EC 50 02 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4", 0x0)}},
 };
