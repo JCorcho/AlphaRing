@@ -66,6 +66,12 @@ namespace AlphaRing::Render::D3d11 {
         return true;
     }
 
+    // #23's fix for a black screen in Halo 2 Anniversary split screen: each view
+    // quad the Anniversary renderer draws (6 indices, a texture a player's slice
+    // high) is clipped to that player's slice of the screen. Off unless asked
+    // for: the renderer already puts each quad on its half by itself on most
+    // machines, and the clip then squeezes each view into a quarter of the
+    // screen, a black band between (seen on 1920x1080 by two people).
     struct CompositeSlotClipGuard {
         ID3D11DeviceContext* p_context;
         bool active = false;
@@ -74,7 +80,7 @@ namespace AlphaRing::Render::D3d11 {
 
         CompositeSlotClipGuard(ID3D11DeviceContext* p_ctx, UINT count) : p_context(p_ctx) {
             auto p_splitscreen = AlphaRing::Global::MCC::Splitscreen();
-            if (p_splitscreen == nullptr || p_splitscreen->player_count <= 1) return;
+            if (p_splitscreen == nullptr || !p_splitscreen->b_halo2_composite_clip || p_splitscreen->player_count <= 1) return;
             if (count != 6) return;
             if (s_compositeSlotThisFrame >= p_splitscreen->player_count) return;
 

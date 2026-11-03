@@ -66,6 +66,9 @@ namespace AlphaRing::Global {
             bool b_player0_use_km = true;
             bool b_override_profile = true;
             bool b_use_player0_profile = true;
+            // #23's composite clip (render/d3d11/Hook.cpp): off, as it squeezes
+            // Halo 2 Anniversary's two views into quarters on most machines.
+            bool b_halo2_composite_clip = false;
         };
     }
 }

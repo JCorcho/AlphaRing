@@ -651,6 +651,14 @@ namespace MCC::Splitscreen {
                     Settings::Save();
                 if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
                     Settings::Save();
+                if (ImGui::MenuItem("Halo 2 Anniversary view clip (#23)", nullptr, &ms.halo2CompositeClip)) {
+                    Settings::ApplySplitscreen(false);
+                    Settings::Save();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Clips each Anniversary view to its player's half of the screen (release 1.3.8's fix for a black screen).\n"
+                                      "Off by default: on most machines it squeezes each view into a quarter with a black band between.\n"
+                                      "Turn it on only if Halo 2 Anniversary split screen shows a black screen without it.");
                 ImGui::Separator();
                 ImGui::BeginDisabled(MCC::IsInGame());
                 if (ImGui::MenuItem("Reset all Alpha Ring settings..."))

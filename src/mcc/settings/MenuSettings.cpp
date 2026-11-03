@@ -196,6 +196,7 @@ namespace AlphaRing::MenuSettings {
         ms.usePlayer0Profile = false;
         ms.anyoneCanPause = true;
         ms.nativePlayStation = true;
+        ms.halo2CompositeClip = false;
         for (int i = 0; i < 4; ++i) {
             ms.controllerIndex[i] = i;
             // player 1 keeps the buttons set in MCC; the others start on Default
@@ -342,6 +343,7 @@ namespace AlphaRing::MenuSettings {
         }
         kv["anyoneCanPause"] = ms.anyoneCanPause ? 1 : 0;
         kv["nativePlayStation"] = ms.nativePlayStation ? 1 : 0;
+        kv["halo2CompositeClip"] = ms.halo2CompositeClip ? 1 : 0;
         for (int c = 0; c < (int)s_characters.size(); ++c)
             for (int k = 0; k < (int)s_characters[c].colors.size() && k < k_lookColorCount; ++k)
                 if (s_characters[c].colors[k] >= 0)
@@ -373,6 +375,7 @@ namespace AlphaRing::MenuSettings {
         }
         ms.anyoneCanPause = get("anyoneCanPause", ms.anyoneCanPause) != 0;
         ms.nativePlayStation = get("nativePlayStation", ms.nativePlayStation) != 0;
+        ms.halo2CompositeClip = get("halo2CompositeClip", ms.halo2CompositeClip) != 0;
         for (int c = 0; c < (int)s_characters.size(); ++c)
             for (int k = 0; k < k_lookColorCount; ++k)
                 s_characters[c].colors[k] = get(CharacterColorKey(c, k), -1);
@@ -1014,6 +1017,7 @@ namespace AlphaRing::MenuSettings {
         p_setting->player_count = ms.playerCount;
         p_setting->b_player0_use_km = ms.useKM;
         p_setting->b_use_player0_profile = ms.usePlayer0Profile;
+        p_setting->b_halo2_composite_clip = ms.halo2CompositeClip;
         MATCH_LOG("ApplySplitscreen(atGameStart={}): override={} player_count={} p1_km={} use_p1_look={}",
                   atGameStart, p_setting->b_override, p_setting->player_count, p_setting->b_player0_use_km,
                   p_setting->b_use_player0_profile);
