@@ -716,6 +716,14 @@ namespace AlphaRing::Input::PlayStation {
         ReleaseSRWLockExclusive(&s_lock);
     }
 
+    void ForgetSlots() {
+        AcquireSRWLockExclusive(&s_lock);
+        s_lastSlot.clear();
+        s_lastSlotDirty = false;
+        ReleaseSRWLockExclusive(&s_lock);
+        DeleteFileA(SlotFile().c_str());
+    }
+
     std::string SlotName(DWORD slot) {
         if (slot >= 4) return {};
         AcquireSRWLockShared(&s_lock);

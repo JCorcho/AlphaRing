@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -654,6 +655,33 @@ namespace AlphaRing::MenuSettings {
         return true;
     }
 
+    bool ResetAll() {
+        std::lock_guard lock(s_mutex);
+        EnsureLoaded();
+        if (MCC::IsInGame())
+            return false;
+        const char* files[] = {"alpha_ring_menu.bin", "alpha_ring_controllers.cfg", "alpha_ring_patches.cfg",
+                               "alpha_ring_splitscreen.cfg"};
+        for (const char* name : files) {
+            std::string path = AlphaRing::Filesystem::ModuleFile(name);
+            if (!DeleteFileA(path.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND)
+                LOG_WARNING("MenuSettings: can't delete {} ({})", path, GetLastError());
+            else
+                LOG_INFO("MenuSettings: deleted {}", path);
+        }
+        s_unreadable = false;
+        Load(); // no file: the defaults
+        for (int i = 0; i < 4; ++i) {
+            auto profile = CGameManager::get_profile(i);
+            if (!profile) continue;
+            swprintf(profile->name, std::size(profile->name), L"Player %d", i + 1);
+            profile->controller_index = s_state.controllerIndex[i];
+        }
+        ApplySplitscreen(true); // publishes
+        AlphaRing::Input::PlayStation::ForgetSlots();
+        return true;
+    }
+
     // ---------------------------------------------------------------- published copy
     //
     // The game asks for a player's profile and button layout from its own
@@ -816,34 +844,68 @@ namespace AlphaRing::MenuSettings {
         return changed;
     }
 
-    bool ComposeProfile(int player, const CUserProfile& base, CUserProfile& out, int game) {
-        if (&out != &base)
-            memcpy(&out, &base, sizeof(CUserProfile));
+    // The look MCC fills into its profile after the match-start snapshot:
+    // the colors in every game, and the armor block in the games that have
+    // one (CE, Halo 2 and ODST have no armor; theirs stays the snapshot's).
+    static void TakeLiveLook(const CUserProfile& live, CUserProfile& p, int game) {
+        auto copy = [&](size_t from, size_t to) {
+            memcpy(reinterpret_cast<char*>(&p) + from, reinterpret_cast<const char*>(&live) + from, to - from);
+        };
+        copy(offsetof(CUserProfile, PlayerModelPrimaryColorIndex), offsetof(CUserProfile, UseEliteModel));
+        copy(offsetof(CUserProfile, PlayerModelPrimaryColor), offsetof(CUserProfile, SpartanPose));
+        if (ArmorGameOf(game) >= 0) {
+            copy(offsetof(CUserProfile, UseEliteModel), offsetof(CUserProfile, LockMaxAspectRatio));
+            copy(offsetof(CUserProfile, PlayerModelPermutation), offsetof(CUserProfile, OnlineMedalFlasher));
+        }
+    }
+
+    bool ComposeProfile(int player, const CUserProfile& snapshot, const CUserProfile* live, CUserProfile& out, int game) {
+        if (&out != &snapshot)
+            memcpy(&out, &snapshot, sizeof(CUserProfile));
         PublishedPlayer p, first;
         bool shareLook = false;
         if (!ReadPublished(player, p, &first, &shareLook))
             return false;
+        bool fromLive = live && live != &snapshot;
+        bool changed = false;
 
-        bool changed = LayLook(shareLook ? first : p, game, out);
+        if (fromLive) {
+            TakeLiveLook(*live, out, game);
+            changed = true;
+        }
+        changed |= LayLook(shareLook ? first : p, game, out);
+
         if (p.sensitivity > 0) {
             out.VerticalLookSensitivity = (unsigned char)p.sensitivity;
             out.HorizontalLookSensitivity = (unsigned char)p.sensitivity;
             changed = true;
+        } else if (fromLive) {
+            out.VerticalLookSensitivity = live->VerticalLookSensitivity;
+            out.HorizontalLookSensitivity = live->HorizontalLookSensitivity;
         }
         if (p.invert >= 0) {
             out.LookControlsInverted = p.invert == 1;
             out.MouseLookControlsInverted = p.invert == 1;
             changed = true;
+        } else if (fromLive) {
+            out.LookControlsInverted = live->LookControlsInverted;
+            out.MouseLookControlsInverted = live->MouseLookControlsInverted;
         }
         if (p.invertFlight >= 0) {
             out.AircraftControlsInverted = p.invertFlight == 1;
             out.MouseAircraftControlsInverted = p.invertFlight == 1;
             changed = true;
+        } else if (fromLive) {
+            out.AircraftControlsInverted = live->AircraftControlsInverted;
+            out.MouseAircraftControlsInverted = live->MouseAircraftControlsInverted;
         }
         if (p.vibration >= 0) {
             out.VibrationDisabled = p.vibration == 0;
             out.ImpulseTriggersDisabled = p.vibration == 0;
             changed = true;
+        } else if (fromLive) {
+            out.VibrationDisabled = live->VibrationDisabled;
+            out.ImpulseTriggersDisabled = live->ImpulseTriggersDisabled;
         }
         return changed;
     }

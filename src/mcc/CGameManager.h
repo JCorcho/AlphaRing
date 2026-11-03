@@ -14,13 +14,7 @@
             int controller_index;
             wchar_t name[1024];
             CGamepadMapping mapping;
-            CUserProfile profile;   // what the game was last given (built in get_player_profile)
-            // The MCC profile as at the start of the mission/match, as the
-            // game got it before: everything but the look and the controls
-            // still comes from this (Halo 2 Anniversary's renderer drew a
-            // quarter-height view in split screen with the live profile's
-            // display settings).
-            CUserProfile settled;
+            CUserProfile profile;   // what the game gets (built in get_player_profile)
         };
 
         struct NetworkDataHeader {
@@ -41,6 +35,9 @@
         static Profile_t* get_profile(int index);
         static CInputDevice* get_controller(int index);
         static void apply_profiles();
+        // The MCC profile as snapshotted by apply_profiles at the start of the
+        // mission/match: what a splitscreen player's profile is built on.
+        static CUserProfile* settled_profile(int index);
         // A match is being set up or is running (set from game_setup/game_restart
         // until MCC exits it), or MCC says one is.
         static bool in_match();

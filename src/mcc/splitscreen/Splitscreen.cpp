@@ -45,6 +45,7 @@ namespace MCC::Splitscreen {
 #include "input/Input.h"
 #include "mcc/settings/MenuSettings.h"
 #include "input/PlayStation.h"
+#include "render/imgui/Toast.h"
 #include "render/imgui/game/xbox/assets/colors.h"
 
 #include <algorithm>
@@ -604,10 +605,40 @@ namespace MCC::Splitscreen {
         }
     }
 
+    static bool s_confirm_reset = false;
+
+    static void ResetPopup() {
+        if (s_confirm_reset) {
+            ImGui::OpenPopup("Reset Alpha Ring settings?");
+            s_confirm_reset = false;
+        }
+        if (ImGui::BeginPopupModal("Reset Alpha Ring settings?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Deletes the mod's settings files next to the DLL:");
+            ImGui::BulletText("alpha_ring_menu.bin - players, controls, sensitivity, looks, characters");
+            ImGui::BulletText("alpha_ring_controllers.cfg - which PlayStation controller is which");
+            ImGui::BulletText("alpha_ring_patches.cfg - Dev Tools patch toggles (after restarting MCC)");
+            ImGui::BulletText("alpha_ring_splitscreen.cfg - Reach split-screen layout (after restarting MCC)");
+            ImGui::TextUnformatted("MCC's own settings and profiles are not touched.");
+            ImGui::Separator();
+            if (ImGui::Button("Reset", ImVec2(120, 0))) {
+                if (Settings::ResetAll())
+                    AlphaRing::Toast::Show("Alpha Ring settings reset to the defaults");
+                else
+                    AlphaRing::Toast::Show("Leave the mission/match first");
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
+
     void RealContext() {
         char buffer[10];
         auto p_setting = AlphaRing::Global::MCC::Splitscreen();
         auto& ms = Settings::State();
+        ResetPopup();
 
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Options")) {
@@ -620,6 +651,14 @@ namespace MCC::Splitscreen {
                     Settings::Save();
                 if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
                     Settings::Save();
+                ImGui::Separator();
+                ImGui::BeginDisabled(MCC::IsInGame());
+                if (ImGui::MenuItem("Reset all Alpha Ring settings..."))
+                    s_confirm_reset = true;
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip(MCC::IsInGame() ? "Leave the mission/match first"
+                                                      : "Deletes every Alpha Ring settings file and starts over with the defaults");
                 if (ImGui::MenuItem("Enable K/M for player1", nullptr, &p_setting->b_player0_use_km)) {
                     ms.useKM = p_setting->b_player0_use_km;
                     Settings::Save();

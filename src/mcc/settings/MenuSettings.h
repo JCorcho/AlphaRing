@@ -57,6 +57,10 @@ namespace AlphaRing::MenuSettings {
     std::vector<Character>& Characters();
 
     bool Save();
+    // Deletes every Alpha Ring settings file (menu settings, remembered
+    // controllers, Dev Tools patch toggles, split-screen layout) and starts
+    // over with the defaults. Not during a mission/match (false).
+    bool ResetAll();
 
     // Pushing the menu state to the game. The players' profiles and button
     // layouts aren't written here: the game hooks build them from the MCC
@@ -82,10 +86,12 @@ namespace AlphaRing::MenuSettings {
 
     // ---- read by the game hooks: never take Mutex(), safe on any thread
 
-    // `out` = `base` (the MCC profile for the running game, CGameGlobal::eGame
-    // `game`) with `player`'s controls and look laid over it. False if the
-    // player changes nothing, `out` then being a copy of `base`.
-    bool ComposeProfile(int player, const CUserProfile& base, CUserProfile& out, int game);
+    // `out` = `snapshot` (the MCC profile as at the start of the mission/match)
+    // with, from `live` (the MCC profile now; null for none), the look MCC
+    // fills in later and the MCC values of the settings left at "MCC" here,
+    // then `player`'s own settings laid over it. CGameGlobal::eGame `game`.
+    // False if nothing changes `snapshot`, `out` then being a copy of it.
+    bool ComposeProfile(int player, const CUserProfile& snapshot, const CUserProfile* live, CUserProfile& out, int game);
     // `out` = `base` (MCC's button layout) with `player`'s controller profile
     // laid over it. False if the player uses MCC's layout as it is.
     bool ComposeMapping(int player, const CGamepadMapping& base, CGamepadMapping& out);

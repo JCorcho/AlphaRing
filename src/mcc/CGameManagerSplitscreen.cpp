@@ -280,49 +280,18 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
     return result;
 }
 
-// The fields of the MCC profile a splitscreen player takes from it live: the
-// look (armor, colors, service tag, weapon skins) and the controls. MCC puts
-// the look in after game_setup (Reach, among others), so the snapshot taken
-// there gave everyone the default look. Everything else (FOV, aspect ratio,
-// HUD...) stays as in that snapshot, as it always was: with the live display
-// settings, Halo 2 Anniversary drew each view at a quarter of the screen.
-static void take_live_fields(const CUserProfile& live, CUserProfile& p) {
-    auto copy = [&](size_t from, size_t to) {
-        memcpy(reinterpret_cast<char*>(&p) + from, reinterpret_cast<const char*>(&live) + from, to - from);
-    };
-    auto field = [&](size_t offset, size_t size) { copy(offset, offset + size); };
-#define LIVE(name) field(offsetof(CUserProfile, name), sizeof(CUserProfile::name))
-    // controls
-    LIVE(LookControlsInverted);
-    LIVE(MouseLookControlsInverted);
-    LIVE(VibrationDisabled);
-    LIVE(ImpulseTriggersDisabled);
-    LIVE(AircraftControlsInverted);
-    LIVE(MouseAircraftControlsInverted);
-    LIVE(AutoCenterEnabled);
-    LIVE(CrouchLockEnabled);
-    LIVE(MKCrouchLockEnabled);
-    LIVE(ClenchProtectionEnabled);
-    LIVE(HoldToZoom);
-    copy(offsetof(CUserProfile, VerticalLookSensitivity), offsetof(CUserProfile, FlyingCameraTurnSensitivity)); // sensitivities, dead zones, presets
-    copy(offsetof(CUserProfile, SwapTriggersAndBumpers), offsetof(CUserProfile, ColorCorrection));              // trigger/bumper swap, aim, dual wield, vehicles
-    copy(offsetof(CUserProfile, MouseSensitivity), offsetof(CUserProfile, PixelPerfectHudScale));              // mouse (not the HUD scale between)
-    copy(offsetof(CUserProfile, MouseAccelerationMinRate), offsetof(CUserProfile, MasterVolume));              // mouse acceleration, key bindings
-    // look
-    LIVE(PlayerModelPrimaryColorIndex);
-    LIVE(PlayerModelSecondaryColorIndex);
-    LIVE(PlayerModelTertiaryColorIndex);
-    LIVE(UseEliteModel);
-    LIVE(PlayerModelPermutation);
-    copy(offsetof(CUserProfile, HelmetIndex), offsetof(CUserProfile, ServiceTag) + sizeof(CUserProfile::ServiceTag)); // armor, colors, poses, skins, tag
-#undef LIVE
-}
-
-// The profile the game gets for a player: in split screen, the snapshot taken
-// at the start of the mission/match with the live look and controls of the MCC
-// profile (player 1's, the only one MCC has), then the player's own controls
-// and look from the menus laid over it. Built on every call, for every game.
-// The MCC profile itself is never written.
+// The profile the game gets for a player.
+//
+// Split screen: the mod's own copy per player, built on the snapshot of the
+// MCC profile taken at the start of the mission/match (apply_profiles), as it
+// always was - every display setting the game sees is that snapshot's. Laid
+// over it: the look MCC fills in after the snapshot (colors; the armor in
+// the games that have it), the player's own settings from the menus, and
+// for the settings left at "MCC" the live value of the few MCC settings the
+// menus could override. The MCC profile itself is never written.
+//
+// A lone player gets the MCC profile as MCC hands it, with the menu settings
+// laid over a copy when any are set.
 CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid)  {
     auto index = get_index(xid);
     auto p_setting = AlphaRing::Global::MCC::Splitscreen();
@@ -333,62 +302,71 @@ CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid) 
         MATCH_LOG("get_player_profile xid={:#x} -> index {} override={} (caller {})", (unsigned long long)xid, index,
                   split, Describe(_ReturnAddress()));
 
-    if (!split && index)
-        return ppOriginal.get_player_profile(self, xid);
-    if (split && !p_setting->b_override_profile)
-        return ppOriginal.get_player_profile(self, get_xuid(0));
-
-    auto* base = ppOriginal.get_player_profile(self, index ? get_xuid(0) : xid);
-    auto* dest = get_profile(index);
-    if (!base || !dest)
-        return (split && dest) ? &dest->profile : base;
-    // MCC's own menus get the MCC profile (player 1 alone, or out of a match)
-    if (!index && !in_match())
-        return base;
-
     auto* gg = GameGlobal();
     int game = gg ? (int)gg->current_game : -1;
-    // a lone player gets the live profile, as MCC gives it
-    const CUserProfile* start = base;
-    CUserProfile merged;
-    if (split) {
-        // once per match: where the live MCC profile differs from the
-        // mission-start snapshot (byte ranges, offsets as in CUserProfile.h)
-        static std::atomic<long> s_diff_seen;
-        if (FirstThisMatch(s_diff_seen)) {
-            const auto* a = reinterpret_cast<const unsigned char*>(&dest->settled);
-            const auto* b = reinterpret_cast<const unsigned char*>(base);
-            std::string ranges;
-            int ranges_count = 0;
-            for (size_t i = 0; i < sizeof(CUserProfile) && ranges_count < 64;) {
-                if (a[i] == b[i]) { ++i; continue; }
-                size_t start = i;
-                while (i < sizeof(CUserProfile) && a[i] != b[i]) ++i;
-                char buffer[32];
-                snprintf(buffer, sizeof(buffer), "%s0x%zX-0x%zX", ranges.empty() ? "" : " ", start, i - 1);
-                ranges += buffer;
-                ++ranges_count;
-            }
-            LOG_INFO("profile: live MCC profile differs from the match-start snapshot at: {}",
-                      ranges.empty() ? std::string("nothing") : ranges);
-        }
-        memcpy(&merged, &dest->settled, sizeof(CUserProfile));
-        take_live_fields(*base, merged);
-        start = &merged;
+
+    if (!split) {
+        if (index)
+            return ppOriginal.get_player_profile(self, xid);
+        auto* base = ppOriginal.get_player_profile(self, xid);
+        if (!base || !in_match())
+            return base;
+        static CUserProfile s_lone;
+        CUserProfile composed;
+        if (!AlphaRing::MenuSettings::ComposeProfile(0, *base, nullptr, composed, game))
+            return base;
+        if (memcmp(&s_lone, &composed, sizeof(CUserProfile)) != 0)
+            memcpy(&s_lone, &composed, sizeof(CUserProfile));
+        return &s_lone;
     }
+
+    if (!p_setting->b_override_profile)
+        return ppOriginal.get_player_profile(self, get_xuid(0));
+
+    auto* dest = get_profile(index);
+    auto* settled = settled_profile(index);
+    if (!dest || !settled)
+        return ppOriginal.get_player_profile(self, xid);
+    // out of a match the copy stays as it is, as it always did
+    if (!in_match())
+        return &dest->profile;
+    auto* live = ppOriginal.get_player_profile(self, get_xuid(0));
+    if (!live)
+        return &dest->profile;
+
+    // once per match: where the live MCC profile differs from the snapshot
+    // (byte ranges, offsets as in CUserProfile.h)
+    static std::atomic<long> s_diff_seen;
+    if (FirstThisMatch(s_diff_seen)) {
+        const auto* a = reinterpret_cast<const unsigned char*>(settled);
+        const auto* b = reinterpret_cast<const unsigned char*>(live);
+        std::string ranges;
+        int ranges_count = 0;
+        for (size_t i = 0; i < sizeof(CUserProfile) && ranges_count < 64;) {
+            if (a[i] == b[i]) { ++i; continue; }
+            size_t start = i;
+            while (i < sizeof(CUserProfile) && a[i] != b[i]) ++i;
+            char buffer[32];
+            snprintf(buffer, sizeof(buffer), "%s0x%zX-0x%zX", ranges.empty() ? "" : " ", start, i - 1);
+            ranges += buffer;
+            ++ranges_count;
+        }
+        LOG_INFO("profile: live MCC profile differs from the match-start snapshot at: {}",
+                 ranges.empty() ? std::string("nothing") : ranges);
+    }
+
     CUserProfile composed;
-    bool changed = AlphaRing::MenuSettings::ComposeProfile(index, *start, composed, game);
-    if (!split && !changed)
-        return base;
-    // only bytes that differ change, so a reader never sees the copy half-built
+    AlphaRing::MenuSettings::ComposeProfile(index, *settled, live, composed, game);
+    // only when something differs, so a reader never sees the copy half-built for nothing
     if (memcmp(&dest->profile, &composed, sizeof(CUserProfile)) != 0)
         memcpy(&dest->profile, &composed, sizeof(CUserProfile));
     return &dest->profile;
 }
 
-// The button layout: MCC's (player 1's, as set in MCC's settings), with the
-// player's controller profile laid over a copy of it, or MCC's as it is for
-// a player on "MCC Settings".
+// The button layout: always the mod's own copy per player, as it always was.
+// Its content is MCC's layout (player 1's, as set in MCC's controller
+// settings) as it is now, with the player's controller profile laid over it
+// when they picked one; "MCC Settings" gets MCC's as it is.
 CGamepadMapping* CGameManager::retrive_gamepad_mapping(CGameManager *self, __int64 xid) {
     auto index = get_index(xid);
     auto p_setting = AlphaRing::Global::MCC::Splitscreen();
@@ -402,19 +380,16 @@ CGamepadMapping* CGameManager::retrive_gamepad_mapping(CGameManager *self, __int
     if (!split && index)
         return ppOriginal.retrive_gamepad_mapping(self, xid);
 
-    auto* base = ppOriginal.retrive_gamepad_mapping(self, index ? get_xuid(0) : xid);
     auto* dest = get_profile(index);
-    if (!base || !dest)
-        return (split && dest) ? &dest->mapping : base;
-    // MCC's controller settings screen edits the real layout
-    if (!index && !in_match())
-        return base;
+    if (!dest)
+        return ppOriginal.retrive_gamepad_mapping(self, xid);
 
-    CGamepadMapping composed;
-    bool changed = AlphaRing::MenuSettings::ComposeMapping(index, *base, composed);
-    if (!changed && !index)
-        return base;
-    if (memcmp(&dest->mapping, &composed, sizeof(CGamepadMapping)) != 0)
-        memcpy(&dest->mapping, &composed, sizeof(CGamepadMapping));
+    auto* base = ppOriginal.retrive_gamepad_mapping(self, index ? get_xuid(0) : xid);
+    if (base) {
+        CGamepadMapping composed;
+        AlphaRing::MenuSettings::ComposeMapping(index, *base, composed);
+        if (memcmp(&dest->mapping, &composed, sizeof(CGamepadMapping)) != 0)
+            memcpy(&dest->mapping, &composed, sizeof(CGamepadMapping));
+    }
     return &dest->mapping;
 }

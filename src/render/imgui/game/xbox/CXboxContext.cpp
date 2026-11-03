@@ -114,6 +114,7 @@ void CXboxContext::render() {
         }
         commitState();
 
+        CGameManager::apply_profiles();
         AlphaRing::MenuSettings::ApplyAll(false, previousTeams);
         if (auto* engine = GameEngine())
             engine->load_setting();

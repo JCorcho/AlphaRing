@@ -14,6 +14,16 @@
 
 static struct ProfileContainer_t {CGameManager::Profile_t profiles[4]; ProfileContainer_t();} container;
 
+// Kept apart from the profiles (Profile_t keeps the layout the game has
+// always been handed: nothing of ours follows a profile but the next one).
+static CUserProfile s_settled[4];
+
+CUserProfile* CGameManager::settled_profile(int index) {
+    if (index < 0 || index >= 4)
+        return nullptr;
+    return s_settled + index;
+}
+
 CGameManager::Profile_t* CGameManager::get_profile(int index) {
     // Bounds check to prevent out-of-bounds access
     if (index < 0 || index >= 4)
@@ -148,7 +158,7 @@ static void log_match_settings(const char* when) {
 }
 
 // A snapshot of the MCC profile taken as a mission/match starts, which the
-// splitscreen players' profiles are built on (see Profile_t::settled). Only
+// splitscreen players' profiles are built on (settled_profile). Only
 // at game_setup/game_restart, where it always was: the look and the controls
 // come from the live MCC profile anyway.
 void CGameManager::apply_profiles() {
@@ -166,7 +176,7 @@ void CGameManager::apply_profiles() {
     for (int i = 0; i < 4; ++i) {
         auto profile = get_profile(i);
         if (profile) {
-            memcpy(&profile->settled, base_profile, sizeof(CUserProfile));
+            memcpy(&s_settled[i], base_profile, sizeof(CUserProfile));
             memcpy(&profile->profile, base_profile, sizeof(CUserProfile));
             memcpy(&profile->mapping,  base_mapping,  sizeof(CGamepadMapping));
         }

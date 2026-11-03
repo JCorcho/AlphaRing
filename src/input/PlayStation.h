@@ -22,5 +22,6 @@ namespace AlphaRing::Input::PlayStation {
     DWORD ConnectedMask();
     bool SetVibration(DWORD slot, const XINPUT_VIBRATION* vibration);
     void SetSlotPlayer(DWORD slot, int player); // for the lightbar; -1 for none
+    void ForgetSlots();                         // the remembered slots, file included
     std::string SlotName(DWORD slot);           // "DualSense (Bluetooth), 80%", or empty
 }
