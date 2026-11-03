@@ -183,6 +183,10 @@ void CGameManager::apply_profiles() {
 //   games' teams out, and they are sent here.
 // Only the latest pending batch fires, and only while a match is still on.
 static std::atomic<unsigned> s_deferred_generation{0};
+// When the deferred settings reload last went out. Halo 2 answers it by
+// running its match setup again (game_setup), which used to schedule another
+// reload, and so on every 10 s for the whole match.
+static std::atomic<ULONGLONG> s_deferred_reload_at{0};
 
 static void send_after_match_start(DWORD delay_ms, bool teams, bool reload) {
     unsigned generation = ++s_deferred_generation;
@@ -206,6 +210,7 @@ static void send_after_match_start(DWORD delay_ms, bool teams, bool reload) {
         auto* e = GameEngine();
         if (reload && e) {
             MATCH_LOG("load_setting (deferred #{})", generation);
+            s_deferred_reload_at = GetTickCount64();
             e->load_setting();
         }
     }).detach();
@@ -226,6 +231,11 @@ static void apply_menu_settings() {
         } else {
             MATCH_LOG("load_setting skipped: no engine");
         }
+    }
+    // the setup our own deferred reload just caused: it has its settings already
+    if (late_reload && GetTickCount64() - s_deferred_reload_at.load() < 3000) {
+        MATCH_LOG("deferred reload skipped: this setup answers the last one");
+        late_reload = false;
     }
     if (late_teams || late_reload)
         send_after_match_start(game == CGameGlobal::GroundHog ? 5000 : 10000, late_teams, late_reload);

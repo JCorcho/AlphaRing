@@ -19,6 +19,19 @@ static DWORD (WINAPI* g_pXInputSetState)(_In_ DWORD dwUserIndex, _In_ XINPUT_VIB
 static DWORD (WINAPI* g_pXInputGetCapabilities)(DWORD dwUserIndex, DWORD dwFlags, XINPUT_CAPABILITIES* pCapabilities);
 static DWORD (WINAPI* g_pXInputGetStateEx)(DWORD dwUserIndex, XINPUT_STATE* pState); // ordinal 100: adds the Guide button
 
+// XInputGetCapabilitiesEx (xinput1_4 ordinal 108): the capabilities plus the
+// device's USB ids, which games use to tell controllers apart.
+struct XINPUT_CAPABILITIES_EX_T {
+    XINPUT_CAPABILITIES Capabilities;
+    WORD VendorId;
+    WORD ProductId;
+    WORD ProductVersion;
+    WORD Unknown1;
+    DWORD Unknown2;
+};
+static DWORD (WINAPI* g_pXInputGetCapabilitiesEx)(DWORD unknown, DWORD dwUserIndex, DWORD dwFlags, XINPUT_CAPABILITIES_EX_T* pCapabilities);
+static DWORD (WINAPI* g_pXInputGetBatteryInformation)(DWORD dwUserIndex, BYTE devType, XINPUT_BATTERY_INFORMATION* pBatteryInformation);
+
 // SetThreadState: the player whose input set_state is building on this thread.
 static thread_local const XINPUT_STATE* t_override_state = nullptr;
 static thread_local DWORD t_override_slot = 0;
@@ -92,6 +105,32 @@ static DWORD WINAPI XInputGetCapabilitiesDetour(DWORD dwUserIndex, DWORD dwFlags
     return ERROR_SUCCESS;
 }
 
+// A DualShock 4 / DualSense in the slot (no XInput controller there).
+static bool PlayStationOnly(DWORD dwUserIndex) {
+    return dwUserIndex < 4 && (AlphaRing::Input::PlayStation::ConnectedMask() & (1u << dwUserIndex));
+}
+
+static DWORD WINAPI XInputGetCapabilitiesExDetour(DWORD unknown, DWORD dwUserIndex, DWORD dwFlags, XINPUT_CAPABILITIES_EX_T* pCapabilities) {
+    DWORD result = g_pXInputGetCapabilitiesEx(unknown, dwUserIndex, dwFlags, pCapabilities);
+    if (result == ERROR_SUCCESS || !pCapabilities || !PlayStationOnly(dwUserIndex))
+        return result;
+    ZeroMemory(pCapabilities, sizeof(*pCapabilities));
+    XInputGetCapabilitiesDetour(dwUserIndex, dwFlags, &pCapabilities->Capabilities);
+    pCapabilities->VendorId = 0x045E;  // a wired Xbox 360 controller, the standard XInput device
+    pCapabilities->ProductId = 0x028E;
+    pCapabilities->ProductVersion = 0x0114;
+    return ERROR_SUCCESS;
+}
+
+static DWORD WINAPI XInputGetBatteryInformationDetour(DWORD dwUserIndex, BYTE devType, XINPUT_BATTERY_INFORMATION* pBatteryInformation) {
+    DWORD result = g_pXInputGetBatteryInformation(dwUserIndex, devType, pBatteryInformation);
+    if (result == ERROR_SUCCESS || !pBatteryInformation || !PlayStationOnly(dwUserIndex))
+        return result;
+    pBatteryInformation->BatteryType = devType == BATTERY_DEVTYPE_GAMEPAD ? BATTERY_TYPE_WIRED : BATTERY_TYPE_DISCONNECTED;
+    pBatteryInformation->BatteryLevel = BATTERY_LEVEL_FULL;
+    return ERROR_SUCCESS;
+}
+
 template <typename T>
 static void HookExport(LPVOID target, LPVOID detour, T** original, const char* name) {
     if (!target) return;
@@ -114,6 +153,8 @@ namespace AlphaRing::Input {
 
         g_pXInputGetCapabilities = (decltype(g_pXInputGetCapabilities))GetProcAddress(hModule, "XInputGetCapabilities");
         g_pXInputGetStateEx = (decltype(g_pXInputGetStateEx))GetProcAddress(hModule, (LPCSTR)100);
+        g_pXInputGetCapabilitiesEx = (decltype(g_pXInputGetCapabilitiesEx))GetProcAddress(hModule, (LPCSTR)108);
+        g_pXInputGetBatteryInformation = (decltype(g_pXInputGetBatteryInformation))GetProcAddress(hModule, "XInputGetBatteryInformation");
 
         MH_STATUS mhStatus = MH_Initialize();
         if (mhStatus == MH_OK || mhStatus == MH_ERROR_ALREADY_INITIALIZED) {
@@ -121,6 +162,8 @@ namespace AlphaRing::Input {
             HookExport((LPVOID)g_pXInputSetState, (LPVOID)&XInputSetStateDetour, &g_pXInputSetState, "XInputSetState");
             HookExport((LPVOID)g_pXInputGetCapabilities, (LPVOID)&XInputGetCapabilitiesDetour, &g_pXInputGetCapabilities, "XInputGetCapabilities");
             HookExport((LPVOID)g_pXInputGetStateEx, (LPVOID)&XInputGetStateExDetour, &g_pXInputGetStateEx, "XInputGetStateEx");
+            HookExport((LPVOID)g_pXInputGetCapabilitiesEx, (LPVOID)&XInputGetCapabilitiesExDetour, &g_pXInputGetCapabilitiesEx, "XInputGetCapabilitiesEx");
+            HookExport((LPVOID)g_pXInputGetBatteryInformation, (LPVOID)&XInputGetBatteryInformationDetour, &g_pXInputGetBatteryInformation, "XInputGetBatteryInformation");
         }
 
         g_menuConfig = MenuConfig::load();
