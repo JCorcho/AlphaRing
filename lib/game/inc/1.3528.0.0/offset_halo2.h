@@ -29,3 +29,41 @@ DefOffset(OFFSET_HALO2_PF_PLAYERS_UPDATE, 0x6A3910)
 DefOffset(OFFSET_HALO2_PF_COOP_CAMPAIGN, 0x6A6320) // bool () - a co-op campaign: session [0xE80A78] mode +8 == 1, byte +0x2C8
 DefOffset(OFFSET_HALO2_PF_COOP_RESPAWN_ALLOWED, 0x6A5D40) // bool () - not with the Iron skull (11), not on Legendary
 DefOffset(OFFSET_HALO2_PV_SCENARIO, 0xE6F768) // the loaded scenario*: int starting locations +0x100
+
+// Halo 2 Anniversary graphics with 3-4 players (module/entry/halo2/anniversary.cpp; from kirklandsig/AlphaRing)
+DefOffset(OFFSET_HALO2_PF_CINEMATIC, 0x6F4A20) // bool () - one view (cinematics)
+DefOffset(OFFSET_HALO2_PF_FIRST_PERSON_BUILD, 0x81BFB0) // void (int local)
+DefOffset(OFFSET_HALO2_PF_FIRST_PERSON_SYNC, 0x6D0D0) // void () - players 1-2's first-person models, each hidden in the other's view
+DefOffset(OFFSET_HALO2_PF_LOCAL_PLAYER_COUNT, 0x6A4380) // int () - a 12-byte leaf
+DefOffset(OFFSET_HALO2_PF_OWN_UNIT_IN_FIRST_PERSON, 0x5FE80) // bool (int object, int local) - the local player's unit, in first person
+DefOffset(OFFSET_HALO2_PF_PLAYER_VISIBLE_OBJECTS, 0x608A0) // void (int local) - the window's visible objects, as view 0's (local 0) or view 1's
+DefOffset(OFFSET_HALO2_PF_SABER_ADD_RENDER_TARGET, 0xF7750)
+DefOffset(OFFSET_HALO2_PF_SABER_AFTER_CAMERAS, 0x2E3F70) // void () - after the views, before the UI and HUD
+DefOffset(OFFSET_HALO2_PF_SABER_BUILD_CAMERA_LIST, 0x2DDCB0) // (renderer*, list*, bool split, -)
+DefOffset(OFFSET_HALO2_PF_SABER_CAMERA_SET_FOV, 0xBC560) // void (camera*, float vertical degrees) - also the projection
+DefOffset(OFFSET_HALO2_PF_SABER_COMPOSITE, 0x1D2A00) // void (texture*, bool split, int index) - a view's image to its half
+DefOffset(OFFSET_HALO2_PF_SABER_DELETE_TEXTURE, 0x1A5990)
+DefOffset(OFFSET_HALO2_PF_SABER_HAND_OVER_VIEW, 0x5F510) // void (int view, bool split) - observer camera(view) -> cams[view]
+DefOffset(OFFSET_HALO2_PF_SABER_HDR_PASS, 0x210BF0) // void (-, -, -, -, -, float, int hdr view, bool, ...) - a view's exposure adaptation, bloom and tonemapping
+DefOffset(OFFSET_HALO2_PF_SABER_LIST_CAMERA, 0x1C7740) // int (list*, camera*, flags, split index, 6 more) - appends a copy
+DefOffset(OFFSET_HALO2_PF_SABER_OBJECT_HIDE, 0x69CA0) // void (object*)
+DefOffset(OFFSET_HALO2_PF_SABER_OBJECT_SHOW, 0x69C30) // void (object*)
+DefOffset(OFFSET_HALO2_PF_SABER_RENDER_FRAME, 0x2DEC00) // void ()
+DefOffset(OFFSET_HALO2_PF_SPLIT_CELL, 0x7E0BD0) // void (int view, int views, int mode, short grid[2], short cell[2], short span[2])
+DefOffset(OFFSET_HALO2_PF_SPLIT_GRID, 0x7E09D0) // void (int views, int mode, short grid[2] columns, rows) - mode 1 stacks, others side by side
+DefOffset(OFFSET_HALO2_PV_ANNIVERSARY, 0xE21280) // int, nonzero while the Anniversary renderer is up
+DefOffset(OFFSET_HALO2_PV_CLASSIC_SHOWN, 0x1E8CE73) // bool, the player switched to Classic graphics
+DefOffset(OFFSET_HALO2_PV_FIRST_PERSON_MODELS, 0x1AB11C0) // entries*, int count at +8; 0x28 each: +8 object**, +0x1C owner, +0x20 active
+DefOffset(OFFSET_HALO2_PV_MODEL_LEVELS, 0x1DC36F0) // unsigned char* detail levels, int count at +8 - the current one is the last
+DefOffset(OFFSET_HALO2_PV_SABER_CAMERAS, 0x1E91210) // container*: camera*[] at +0x100, int count +0x108
+DefOffset(OFFSET_HALO2_PV_SABER_CONTEXT, 0x1E8D420) // context*, ID3D11DeviceContext* at +0xD58
+DefOffset(OFFSET_HALO2_PV_SABER_DEVICE, 0x1E8D418) // device*, settings* at +0x118: out w +0x10, h +0x14, pixel aspect +0x1C
+DefOffset(OFFSET_HALO2_PV_SABER_HDR_READ_BACKS, 0x1AB8758) // texture*[4][2] - per HDR view, the luminance read back on alternate frames
+DefOffset(OFFSET_HALO2_PV_SABER_HDR_VIEWS, 0x1AB8600) // 0x4C per HDR view (4): settings, +0x3C measured luminance, +0x40 exposure, +0x44 adapted luminance, int +0x48 frames
+DefOffset(OFFSET_HALO2_PV_SABER_SCENE, 0x1A250F8) // scene*, the renderer's camera list at +0x140
+DefOffset(OFFSET_HALO2_SABER_COMPOSITE_DRAW, 0x1D2C33) // in it, the quad's vertices are at rsp+0xC0 (x, y, z, -, u, v; 0x18 each)
+DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_FIRST_PERSON_1, 0x64004)
+DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_FIRST_PERSON_2, 0x64F4E)
+DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_FIRST_PERSON_3, 0x65559)
+DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_OBJECT_SYNC, 0x6A00C)
+DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_SCREEN_EFFECT, 0x6F40C)

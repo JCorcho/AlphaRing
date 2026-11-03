@@ -47,5 +47,7 @@ DLL is attached to the run.
 11. **Controller Test** (F1 → Splitscreen → Controller Test): every controller shows its buttons live under the right slot and player; after a mission loads, "Last given to the game" lists each player's own sensitivity and colors.
 12. **Restart**: quit and relaunch MCC with the PlayStation controllers on: each comes back as the same Controller number (and player). The Controller list shows its battery.
 13. **Deadzone**: set *Stick Deadzone* to 15% for one player: small stick movements do nothing, full tilt still turns at full speed.
+14. **Halo 2 Anniversary, 3 players** (mode on by default): start a mission with 3 players in Anniversary graphics. Player 1 has the top half, players 2 and 3 a quarter each, each with their own view, HUD and weapon; the log says "3 players in Halo 2 Anniversary graphics (experimental)". Press Back/Tab twice (Classic and back): every view still drawn. If a view stays black or the screen flickers, note it and send the log.
+15. **Halo 2 Anniversary, 2 players**: unchanged from before (the mode leaves 2-player missions to the game). If the screen is black, turn on *Halo 2: two-view black-screen fix* and retry.
 
 If something fails, note the step and attach `alpha_ring_info.log` from that session.

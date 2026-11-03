@@ -30,6 +30,7 @@ REVIEWED = {
 
 HOOK_TARGETS = [
     r"\w+Entry\(\s*\w+\s*,\s*(OFFSET_\w+)",                                  # Halo1Entry(name, OFFSET_X
+    r"PreservedEntry\(\s*\w+\s*,\s*\w+\(\)\s*,\s*(OFFSET_\w+)",            # PreservedEntry(name, Set(), OFFSET_X
     r"::Entry\s+\w+\(\s*\w+\(\)\s*,\s*(OFFSET_\w+)",                         # ::Entry name(Set(), OFFSET_X
 ]
 GATED_LISTS = [

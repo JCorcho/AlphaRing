@@ -10,6 +10,10 @@
 #include "../CGameGlobal.h"
 #include "log/MatchLog.h"
 
+#include <atomic>
+
+namespace Halo2::Entry::Anniversary { bool Available(); }
+
 namespace MCC::Splitscreen {
     DefDetourFunction(__int64, __fastcall, get_index_by_xuid, void* a1, __int64 xuid) {
         auto p_setting = AlphaRing::Global::MCC::Splitscreen();
@@ -40,11 +44,31 @@ namespace MCC::Splitscreen {
         return true;
     }
 
+    static std::atomic<bool> s_anniversary_quad_active{false}; // the current mission's
+
+    bool AnniversaryQuadChosen() { return AlphaRing::Global::MCC::Splitscreen()->b_anniversary_quad; }
+    bool AnniversaryQuadActive() { return s_anniversary_quad_active; }
+    bool AnniversaryTwoViewFixChosen() { return AlphaRing::Global::MCC::Splitscreen()->b_halo2_two_view_fix; }
+
     ClassicGraphicsScope::ClassicGraphicsScope(unsigned char* game_options, int game) {
         auto p_setting = AlphaRing::Global::MCC::Splitscreen();
-        if (!p_setting->b_override || !p_setting->b_classic_graphics_3p || game_options == nullptr) return;
+        // The mode is set up for every Halo 2 mission it can be (it runs with 3-4 players while Anniversary is
+        // on screen: Back switches to Anniversary in the middle of a mission).
+        s_anniversary_quad_active = p_setting->b_override && game == CGameGlobal::Halo2 && AnniversaryQuadChosen() &&
+                                    Halo2::Entry::Anniversary::Available();
+        if (!p_setting->b_override || game_options == nullptr) return;
         if (p_setting->player_count <= 2) return;
         if (!(game_options[0] & 1)) return; // Classic already
+        if (s_anniversary_quad_active) {
+            LOG_INFO("Splitscreen: {} players in Halo 2 Anniversary graphics (experimental)", p_setting->player_count);
+            return;
+        }
+        if (!p_setting->b_classic_graphics_3p) {
+            LOG_WARNING("Splitscreen: {} players in {} Anniversary graphics, which draws two views only{}",
+                        p_setting->player_count, game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2",
+                        game == CGameGlobal::Halo2 && AnniversaryQuadChosen() ? " (the 3-4 player mode is missing an address in this build)" : "");
+            return;
+        }
 
         LOG_INFO("Splitscreen: {} players in {}: starting in Classic graphics (Anniversary draws two views only)",
                  p_setting->player_count, game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2");
@@ -669,6 +693,20 @@ namespace MCC::Splitscreen {
                     Settings::Save();
                 if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
                     Settings::Save();
+                if (ImGui::MenuItem("Halo 2: Anniversary graphics with 3-4 players (experimental)", nullptr, &ms.anniversaryQuad)) {
+                    Settings::ApplySplitscreen(false);
+                    Settings::Save();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Halo 2's Anniversary renderer draws two views; this mode draws all four, two per frame in turn\n"
+                                      "(each view at half the frame rate). Takes effect as a mission starts. From kirklandsig/AlphaRing.");
+                if (ImGui::MenuItem("Halo 2: two-view black-screen fix", nullptr, &ms.halo2TwoViewFix)) {
+                    Settings::ApplySplitscreen(false);
+                    Settings::Save();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("With two players, the mod draws each Anniversary view into its half itself.\n"
+                                      "Only if Halo 2 Anniversary split screen shows a black screen (seen under Proton).");
                 if (ImGui::MenuItem("Halo CE/2: Classic graphics with 3-4 players", nullptr, &ms.classicGraphics3P)) {
                     Settings::ApplySplitscreen(false);
                     Settings::Save();
@@ -676,14 +714,6 @@ namespace MCC::Splitscreen {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Anniversary graphics in Halo CE and Halo 2 can only draw two views, so with 3-4 players a mission\n"
                                       "starts in Classic graphics, where everyone gets a view. Back/Tab still switches mid-mission.");
-                if (ImGui::MenuItem("Halo 2 Anniversary view clip (#23)", nullptr, &ms.halo2CompositeClip)) {
-                    Settings::ApplySplitscreen(false);
-                    Settings::Save();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Clips each Anniversary view to its player's half of the screen (release 1.3.8's fix for a black screen).\n"
-                                      "Off by default: on most machines it squeezes each view into a quarter with a black band between.\n"
-                                      "Turn it on only if Halo 2 Anniversary split screen shows a black screen without it.");
                 ImGui::Separator();
                 ImGui::BeginDisabled(MCC::IsInGame());
                 if (ImGui::MenuItem("Reset all Alpha Ring settings..."))
