@@ -1,6 +1,7 @@
 #include "CGameManager.h"
 
 #include <cmath>
+#include <cstddef>
 
 #include "common.h"
 
@@ -277,12 +278,49 @@ bool CGameManager::get_key_state(CGameManager *self, DWORD index, input_data_t *
     return result;
 }
 
-// The profile the game gets for a player: the MCC profile (player 1's, the
-// only one MCC has) as it is right now, with the player's controls and look
-// from the menus laid over a copy of it. Built on every call, for every game:
-// the MCC profile isn't complete when game_setup runs (Reach, among others,
-// puts the armor in later), so a copy taken then gave everyone the default
-// look. The MCC profile itself is never written.
+// The fields of the MCC profile a splitscreen player takes from it live: the
+// look (armor, colors, service tag, weapon skins) and the controls. MCC puts
+// the look in after game_setup (Reach, among others), so the snapshot taken
+// there gave everyone the default look. Everything else (FOV, aspect ratio,
+// HUD...) stays as in that snapshot, as it always was: with the live display
+// settings, Halo 2 Anniversary drew each view at a quarter of the screen.
+static void take_live_fields(const CUserProfile& live, CUserProfile& p) {
+    auto copy = [&](size_t from, size_t to) {
+        memcpy(reinterpret_cast<char*>(&p) + from, reinterpret_cast<const char*>(&live) + from, to - from);
+    };
+    auto field = [&](size_t offset, size_t size) { copy(offset, offset + size); };
+#define LIVE(name) field(offsetof(CUserProfile, name), sizeof(CUserProfile::name))
+    // controls
+    LIVE(LookControlsInverted);
+    LIVE(MouseLookControlsInverted);
+    LIVE(VibrationDisabled);
+    LIVE(ImpulseTriggersDisabled);
+    LIVE(AircraftControlsInverted);
+    LIVE(MouseAircraftControlsInverted);
+    LIVE(AutoCenterEnabled);
+    LIVE(CrouchLockEnabled);
+    LIVE(MKCrouchLockEnabled);
+    LIVE(ClenchProtectionEnabled);
+    LIVE(HoldToZoom);
+    copy(offsetof(CUserProfile, VerticalLookSensitivity), offsetof(CUserProfile, FlyingCameraTurnSensitivity)); // sensitivities, dead zones, presets
+    copy(offsetof(CUserProfile, SwapTriggersAndBumpers), offsetof(CUserProfile, ColorCorrection));              // trigger/bumper swap, aim, dual wield, vehicles
+    copy(offsetof(CUserProfile, MouseSensitivity), offsetof(CUserProfile, PixelPerfectHudScale));              // mouse (not the HUD scale between)
+    copy(offsetof(CUserProfile, MouseAccelerationMinRate), offsetof(CUserProfile, MasterVolume));              // mouse acceleration, key bindings
+    // look
+    LIVE(PlayerModelPrimaryColorIndex);
+    LIVE(PlayerModelSecondaryColorIndex);
+    LIVE(PlayerModelTertiaryColorIndex);
+    LIVE(UseEliteModel);
+    LIVE(PlayerModelPermutation);
+    copy(offsetof(CUserProfile, HelmetIndex), offsetof(CUserProfile, ServiceTag) + sizeof(CUserProfile::ServiceTag)); // armor, colors, poses, skins, tag
+#undef LIVE
+}
+
+// The profile the game gets for a player: in split screen, the snapshot taken
+// at the start of the mission/match with the live look and controls of the MCC
+// profile (player 1's, the only one MCC has), then the player's own controls
+// and look from the menus laid over it. Built on every call, for every game.
+// The MCC profile itself is never written.
 CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid)  {
     auto index = get_index(xid);
     auto p_setting = AlphaRing::Global::MCC::Splitscreen();
@@ -308,8 +346,16 @@ CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid) 
 
     auto* gg = GameGlobal();
     int game = gg ? (int)gg->current_game : -1;
+    // a lone player gets the live profile, as MCC gives it
+    const CUserProfile* start = base;
+    CUserProfile merged;
+    if (split) {
+        memcpy(&merged, &dest->settled, sizeof(CUserProfile));
+        take_live_fields(*base, merged);
+        start = &merged;
+    }
     CUserProfile composed;
-    bool changed = AlphaRing::MenuSettings::ComposeProfile(index, *base, composed, game);
+    bool changed = AlphaRing::MenuSettings::ComposeProfile(index, *start, composed, game);
     if (!split && !changed)
         return base;
     // only bytes that differ change, so a reader never sees the copy half-built

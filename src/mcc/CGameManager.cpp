@@ -147,9 +147,10 @@ static void log_match_settings(const char* when) {
               MCC::IsInGame());
 }
 
-// A snapshot of the MCC profile and layout in every player's copy. The game
-// hooks rebuild those copies whenever the game asks for them, so this only
-// keeps the advanced menu's views current between asks.
+// A snapshot of the MCC profile taken as a mission/match starts, which the
+// splitscreen players' profiles are built on (see Profile_t::settled). Only
+// at game_setup/game_restart, where it always was: the look and the controls
+// come from the live MCC profile anyway.
 void CGameManager::apply_profiles() {
     auto p_mng = GameManager();
     if (!MCC::IsInGame() || !p_mng)
@@ -165,6 +166,7 @@ void CGameManager::apply_profiles() {
     for (int i = 0; i < 4; ++i) {
         auto profile = get_profile(i);
         if (profile) {
+            memcpy(&profile->settled, base_profile, sizeof(CUserProfile));
             memcpy(&profile->profile, base_profile, sizeof(CUserProfile));
             memcpy(&profile->mapping,  base_mapping,  sizeof(CGamepadMapping));
         }

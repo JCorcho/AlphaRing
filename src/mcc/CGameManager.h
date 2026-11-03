@@ -14,7 +14,13 @@
             int controller_index;
             wchar_t name[1024];
             CGamepadMapping mapping;
-            CUserProfile profile;
+            CUserProfile profile;   // what the game was last given (built in get_player_profile)
+            // The MCC profile as at the start of the mission/match, as the
+            // game got it before: everything but the look and the controls
+            // still comes from this (Halo 2 Anniversary's renderer drew a
+            // quarter-height view in split screen with the live profile's
+            // display settings).
+            CUserProfile settled;
         };
 
         struct NetworkDataHeader {
