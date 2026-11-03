@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <string>
 
 #include "common.h"
 
@@ -350,6 +352,26 @@ CUserProfile* CGameManager::get_player_profile(CGameManager *self, __int64 xid) 
     const CUserProfile* start = base;
     CUserProfile merged;
     if (split) {
+        // once per match: where the live MCC profile differs from the
+        // mission-start snapshot (byte ranges, offsets as in CUserProfile.h)
+        static std::atomic<long> s_diff_seen;
+        if (FirstThisMatch(s_diff_seen)) {
+            const auto* a = reinterpret_cast<const unsigned char*>(&dest->settled);
+            const auto* b = reinterpret_cast<const unsigned char*>(base);
+            std::string ranges;
+            int ranges_count = 0;
+            for (size_t i = 0; i < sizeof(CUserProfile) && ranges_count < 64;) {
+                if (a[i] == b[i]) { ++i; continue; }
+                size_t start = i;
+                while (i < sizeof(CUserProfile) && a[i] != b[i]) ++i;
+                char buffer[32];
+                snprintf(buffer, sizeof(buffer), "%s0x%zX-0x%zX", ranges.empty() ? "" : " ", start, i - 1);
+                ranges += buffer;
+                ++ranges_count;
+            }
+            LOG_INFO("profile: live MCC profile differs from the match-start snapshot at: {}",
+                      ranges.empty() ? std::string("nothing") : ranges);
+        }
         memcpy(&merged, &dest->settled, sizeof(CUserProfile));
         take_live_fields(*base, merged);
         start = &merged;
