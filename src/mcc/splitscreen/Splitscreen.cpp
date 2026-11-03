@@ -11,8 +11,9 @@
 #include "log/MatchLog.h"
 
 #include <atomic>
+#include <string>
 
-namespace Halo2::Entry::Anniversary { bool Available(); }
+namespace Halo2::Entry::Anniversary { bool Available(); std::string Status(); }
 
 namespace MCC::Splitscreen {
     DefDetourFunction(__int64, __fastcall, get_index_by_xuid, void* a1, __int64 xuid) {
@@ -56,6 +57,10 @@ namespace MCC::Splitscreen {
         // on screen: Back switches to Anniversary in the middle of a mission).
         s_anniversary_quad_active = p_setting->b_override && game == CGameGlobal::Halo2 && AnniversaryQuadChosen() &&
                                     Halo2::Entry::Anniversary::Available();
+        LOG_INFO("Splitscreen: {} mission starts: players={} override={} options={} anniversary_bit={} quad: chosen={} available={} -> active={}",
+                 game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2", p_setting->player_count, p_setting->b_override,
+                 game_options != nullptr, game_options ? (game_options[0] & 1) : -1, AnniversaryQuadChosen(),
+                 game == CGameGlobal::Halo2 && Halo2::Entry::Anniversary::Available(), s_anniversary_quad_active.load());
         if (!p_setting->b_override || game_options == nullptr) return;
         if (p_setting->player_count <= 2) return;
         if (!(game_options[0] & 1)) return; // Classic already
@@ -757,6 +762,13 @@ namespace MCC::Splitscreen {
             ms.playerCount = player_count;
             Settings::ApplySplitscreen(false);
             Settings::Save();
+        }
+
+        {
+            auto status = Halo2::Entry::Anniversary::Status();
+            ImGui::TextDisabled("Halo 2 Anniversary 3-4 players: %s", status.c_str());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("hooked: the mode's hooks are in halo2.dll - active: this mission has the mode - quad: it is drawing four views right now");
         }
 
         if (ImGui::CollapsingHeader("Controller Test")) {

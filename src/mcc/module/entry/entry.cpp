@@ -34,13 +34,13 @@ bool Entry::update(__int64 hModule) {
     m_target = m_offset + hModule;
 
     status = MH_CreateHook((void*)m_target, (void*)m_pDetour, (void**)&m_pOriginal);
-
-    if (status != MH_OK) return false;
-
-    status = MH_EnableHook((void*)m_target);
-
-    if (status != MH_OK) return false;
-
+    if (status == MH_OK) status = MH_EnableHook((void*)m_target);
+    if (status != MH_OK) {
+        LOG_WARNING("[Hooks] {} at {:#x} NOT hooked: {}", m_source->name, m_offset, MH_StatusToString(status));
+        m_target = 0;
+        return false;
+    }
+    LOG_INFO("[Hooks] {} at {:#x} hooked", m_source->name, m_offset);
     return true;
 }
 
@@ -61,7 +61,13 @@ bool EntrySet::update(__int64 hModule) {
 
     if (hModule == 0) return false;
 
-    for (int i = 0; i < entryCount; ++i) result &= entryArray[i]->update(hModule);
+    int hooked = 0;
+    for (int i = 0; i < entryCount; ++i) {
+        bool ok = entryArray[i]->update(hModule);
+        result &= ok;
+        hooked += ok;
+    }
+    if (entryCount > 0) LOG_INFO("[Hooks] module {:#x}: {} of {} hooks in", (unsigned long long)hModule, hooked, entryCount);
 
     return result;
 }

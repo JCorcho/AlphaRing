@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <string>
 #include <cstring>
 #include <initializer_list>
 #include <malloc.h>
@@ -56,9 +57,30 @@ namespace Halo2::Entry::Anniversary {
     }
     bool ClassicShown() { return !s_anniversary_on_screen; }
 
+    // The last answer, with its reasons, for the log and the Splitscreen window.
+    std::atomic<int> s_quad_state = -1; // bit 0 active, 1 players>=3, 2 anniversary shown, 3 not a cinematic, 4 = quad
+
     bool Quad(__int64 module) {
-        return MCC::Splitscreen::AnniversaryQuadActive() && Players(module) >= 3 && AnniversaryShown(module)
-            && !((bool (*)())(module + OFFSET_HALO2_PF_CINEMATIC))();
+        bool active = MCC::Splitscreen::AnniversaryQuadActive();
+        bool players = Players(module) >= 3;
+        bool shown = AnniversaryShown(module);
+        bool cinematic = ((bool (*)())(module + OFFSET_HALO2_PF_CINEMATIC))();
+        bool quad = active && players && shown && !cinematic;
+        int state = (active ? 1 : 0) | (players ? 2 : 0) | (shown ? 4 : 0) | (!cinematic ? 8 : 0) | (quad ? 16 : 0);
+        if (s_quad_state.exchange(state) != state)
+            LOG_INFO("Halo 2 Anniversary 3-4 players: {} (active={} players={} anniversary_shown={} cinematic={})",
+                     quad ? "drawing four views" : "off", active, Players(module), shown, cinematic);
+        return quad;
+    }
+
+    std::string Status() {
+        int state = s_quad_state.load();
+        std::string text = Available() ? "addresses ok" : "an address is missing in this build";
+        if (state < 0) return text + ", not asked yet (no Halo 2 mission since launch)";
+        text += std::string(", active=") + ((state & 1) ? "yes" : "no") + ", players>=3=" + ((state & 2) ? "yes" : "no") +
+                ", anniversary shown=" + ((state & 4) ? "yes" : "no") + ", cinematic=" + ((state & 8) ? "no" : "yes") +
+                " -> " + ((state & 16) ? "DRAWING FOUR VIEWS" : "off");
+        return text;
     }
 
     // Whether local player `player` has had a unit since the module loaded. Players 3 and 4 wait for a co-op respawn

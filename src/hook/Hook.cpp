@@ -73,6 +73,7 @@ namespace AlphaRing::Hook {
         assertm(distro != None, "failed to get distro type");
 
         LOG_INFO("Game Version[{}]: {}", IsWS() ? "Windows Store" : "Steam", GAME_VERSION);
+        LOG_INFO("AlphaRing build: {} ({} {})", ALPHARING_BUILD, __DATE__, __TIME__);
 
         version = FileVersion(hModule);
         if (distro == WindowsStore && version == FileVersion::fromString("1.3498.0.0")) {

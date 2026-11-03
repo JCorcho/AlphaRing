@@ -69,6 +69,14 @@ add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 add_compile_definitions(WRAPPER_DLL_NAME="${WRAPPER_DLL_NAME}")
 add_compile_definitions(GAME_VERSION="${VERSION}")
 
+# The commit the DLL was built from, for the log ("unknown" outside a git checkout).
+execute_process(COMMAND git rev-parse --short=9 HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE ALPHARING_BUILD OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if (NOT ALPHARING_BUILD)
+    set(ALPHARING_BUILD "unknown")
+endif()
+add_compile_definitions(ALPHARING_BUILD="${ALPHARING_BUILD}")
+
 file(GLOB_RECURSE CORE_SRC CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.c
