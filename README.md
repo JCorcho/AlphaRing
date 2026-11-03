@@ -31,6 +31,8 @@ Download the latest stable build from the [Releases](https://github.com/kirkland
 
 Place the DLL into the "Halo The Master Chief Collection\mcc\binaries\win64" directory and launch the game with EAC off.
 
+**Xbox app / Game Pass:** place the DLL into `C:\XboxGames\Halo- The Master Chief Collection\Content\mcc\binaries\win64` (or the same path under your Xbox games folder) and launch the game from the "Halo: MCC Anti-Cheat Disabled (Mods and Limited Services)" Start menu entry.
+
 For Running on Steam Deck/Linux, add the following command in the Steam Game Launch Options:
 ```
 WINEDLLOVERRIDES="WTSAPI32=n,b" %command%
@@ -90,6 +92,8 @@ Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**
 **Campaign:** everything above works the same in campaign missions as in multiplayer. What a game shows of a player's customization in co-op is up to that game (Reach shows the full Spartan armor; games with fixed characters, such as Halo 3's Arbiter and Elites, show less or nothing). For colors, *Copy My Look From MCC* is the most reliable way, as it takes MCC's exact values instead of the menu's 30-color table.
 
 **PlayStation controllers (no DS4Windows needed):** turn the controller on (USB or Bluetooth-paired in Windows) and it shows up as the next free controller, with rumble and its lightbar in the player's color (blue, red, green, pink). Each controller gets the same slot back every time (also after restarting MCC), so each player keeps their controller; the slots are remembered in `alpha_ring_controllers.cfg`. The battery level shows in the Controller list, and a notice warns below 20%. While DS4Windows runs, the controllers are left to it.
+
+**Halo 2 Anniversary split screen shows each view a quarter high with a black band between?** That is the view clip added in release 1.3.8 (#23); it is now off by default. If Halo 2 Anniversary split screen instead shows a black screen for you, turn it on: `F1` → Splitscreen → Options → *Halo 2 Anniversary view clip (#23)*.
 
 **Checking a setup:** `F1` → Splitscreen → *Controller Test* shows every controller slot live (what kind of controller, which player has it, sticks, triggers and buttons) and what each player's settings last gave the game. If a controller's buttons arrive twice, another program is also translating it: close DS4Windows, or disable Steam Input for MCC (MCC → Properties → Controller → *Disable Steam Input*), or turn **PlayStation Controllers** off to keep using those.
 
