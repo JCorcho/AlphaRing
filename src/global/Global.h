@@ -68,6 +68,8 @@ namespace AlphaRing::Global {
             bool b_use_player0_profile = true;
             // Halo 2 with 3-4 players in Anniversary graphics (halo2/anniversary.cpp).
             bool b_anniversary_quad = true;
+            // Halo CE/2 campaign bodies in each player's colors (halo1/colors.cpp, halo2/colors.cpp).
+            bool b_campaign_colors = true;
             // Halo 2's two views drawn by the mode's shaders (a black-screen fix, as #23 was).
             bool b_halo2_two_view_fix = false;
             // Halo CE/2 missions with 3-4 players start in Classic graphics (Splitscreen.h).

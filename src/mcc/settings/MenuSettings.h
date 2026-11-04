@@ -96,6 +96,10 @@ namespace AlphaRing::MenuSettings {
     // laid over it. False if the player uses MCC's layout as it is.
     bool ComposeMapping(int player, const CGamepadMapping& base, CGamepadMapping& out);
     bool VibrationOff(int player); // the player turned rumble off here
+    // A player's color `slot` (0 primary, 1 secondary, 2 tertiary) as RGB in 0-1, for a body in CGameGlobal::eGame
+    // `game`: the color picked in the menus, else the one MCC's profile gives that player for the game. False for
+    // none (the game's own, then).
+    bool PlayerColorRGB(int player, int slot, int game, float rgb[3]);
     int StickDeadzone(int player); // extra deadzone in percent, 0 = none
     static constexpr int k_maxDeadzone = 40;
     bool AnyoneCanPause();

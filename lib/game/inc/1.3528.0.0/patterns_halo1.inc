@@ -189,4 +189,13 @@ const OffsetPatterns kHalo1Patterns[] = {
         Rel("F3 0F 11 05 ?? ?? ?? ?? 4C 8D 05 ?? ?? ?? ?? 66 89 2D ?? ?? D1 02 8B D6 40 88 35", 0x4, 0x8, 0x0)}},
     {&OFFSET_HALO1_SABER_VIEW_OVERLAY_RECT, 0x4513ac, Code, {
         At("F3 44 0F 2C D8 F3 44 0F 2C D2 41 FF CB 41 FF C2 EB ?? F3 0F 59 C3 F3 0F 5C D8 F3 44 0F 2C C8 F3 0F 2C C3 41 FF C9 FF C0 C7 05 ?? ?? ?? ?? 00 00 00 00 48 63 93 20 02 00 00 48 8B 0D", 0x32)}},
+    {&OFFSET_HALO1_PF_PLAYER_SPAWN, 0xad4184, Code, {
+        At("48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D 68 A1 48 81 EC 00 01 00 00 0F 29 70 C8 48 8B 05", 0x0),
+        Rel("E8 ?? ?? ?? ?? 39 6F 64 74 ?? 8B 4C 24 2C 41 0F B7 D6 4C 8D 04 52", 0x1, 0x5, 0x0)}},
+    {&OFFSET_HALO1_PF_PLAYERS_UPDATE, 0xad0720, Code, {
+        At("48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D A8 D8 FB FF FF", 0x0),
+        Rel("48 8D 4C 24 30 E8 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 38 58 03 74 ?? F3 0F 10 05", 0x6, 0xa, 0x0)}},
+    {&OFFSET_HALO1_PF_OBJECT_TRY_AND_GET, 0xb389a4, Code, {
+        At("40 53 48 83 EC 20 8B DA 8B D1 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B D8 33 C0 4D 85 DB 74 ?? 41 0F B6 4B 03", 0x0),
+        Rel("E8 ?? ?? ?? ?? 83 C9 FF 48 85 C0 0F 45 CB 8B C1 48 83 C4 20", 0x1, 0x5, 0x0)}},
 };

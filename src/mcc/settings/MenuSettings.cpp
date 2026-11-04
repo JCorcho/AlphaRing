@@ -8,6 +8,7 @@
 #include "mcc/CGameGlobal.h"
 #include "mcc/mcc.h"
 #include "render/imgui/game/xbox/CXboxColorMapping.h"
+#include "render/imgui/game/xbox/assets/colors.h"
 #include "input/PlayStation.h"
 
 #include <Windows.h>
@@ -199,6 +200,7 @@ namespace AlphaRing::MenuSettings {
         ms.halo2TwoViewFix = false;
         ms.classicGraphics3P = false;
         ms.anniversaryQuad = true;
+        ms.campaignColors = true;
         for (int i = 0; i < 4; ++i) {
             ms.controllerIndex[i] = i;
             // player 1 keeps the buttons set in MCC; the others start on Default
@@ -348,6 +350,7 @@ namespace AlphaRing::MenuSettings {
         kv["halo2TwoViewFix"] = ms.halo2TwoViewFix ? 1 : 0;
         kv["classicGraphics3P"] = ms.classicGraphics3P ? 1 : 0;
         kv["anniversaryQuad"] = ms.anniversaryQuad ? 1 : 0;
+        kv["campaignColors"] = ms.campaignColors ? 1 : 0;
         for (int c = 0; c < (int)s_characters.size(); ++c)
             for (int k = 0; k < (int)s_characters[c].colors.size() && k < k_lookColorCount; ++k)
                 if (s_characters[c].colors[k] >= 0)
@@ -382,6 +385,7 @@ namespace AlphaRing::MenuSettings {
         ms.halo2TwoViewFix = get("halo2TwoViewFix", ms.halo2TwoViewFix) != 0;
         ms.classicGraphics3P = get("classicGraphics3P", ms.classicGraphics3P) != 0;
         ms.anniversaryQuad = get("anniversaryQuad", ms.anniversaryQuad) != 0;
+        ms.campaignColors = get("campaignColors", ms.campaignColors) != 0;
         for (int c = 0; c < (int)s_characters.size(); ++c)
             for (int k = 0; k < k_lookColorCount; ++k)
                 s_characters[c].colors[k] = get(CharacterColorKey(c, k), -1);
@@ -793,6 +797,30 @@ namespace AlphaRing::MenuSettings {
         return result;
     }
 
+    bool PlayerColorRGB(int player, int slot, int game, float rgb[3]) {
+        if (player < 0 || player >= 4 || slot < 0 || slot > 2) return false;
+        PublishedPlayer p, first;
+        bool shareLook = false;
+        if (!ReadPublished(player, p, &first, &shareLook)) return false;
+        const PublishedPlayer& look = shareLook ? first : p;
+        int color = look.namedColor[slot];
+        if (color < 0) {
+            // MCC's: the game's own index in that player's profile, back to the menu color it stands for
+            auto profile = CGameManager::get_profile(player);
+            if (profile == nullptr) return false;
+            const CUserProfile& cp = profile->profile;
+            int index = slot == 0 ? cp.PlayerModelPrimaryColorIndex : slot == 1 ? cp.PlayerModelSecondaryColorIndex : cp.PlayerModelTertiaryColorIndex;
+            for (int c = 0; c < CXboxColorMapping::kColorCount && color < 0; ++c)
+                if (CXboxColorMapping::GetColorIndex(c, game) == index) color = c;
+            if (color < 0) return false;
+        }
+        ImU32 packed = defaultColors[color];
+        rgb[0] = ((packed >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f;
+        rgb[1] = ((packed >> IM_COL32_G_SHIFT) & 0xFF) / 255.0f;
+        rgb[2] = ((packed >> IM_COL32_B_SHIFT) & 0xFF) / 255.0f;
+        return true;
+    }
+
     bool VibrationOff(int player) {
         if (player < 0 || player >= 4) return false;
         AcquireSRWLockShared(&s_publishLock);
@@ -1026,6 +1054,7 @@ namespace AlphaRing::MenuSettings {
         p_setting->b_halo2_two_view_fix = ms.halo2TwoViewFix;
         p_setting->b_classic_graphics_3p = ms.classicGraphics3P;
         p_setting->b_anniversary_quad = ms.anniversaryQuad;
+        p_setting->b_campaign_colors = ms.campaignColors;
         MATCH_LOG("ApplySplitscreen(atGameStart={}): override={} player_count={} p1_km={} use_p1_look={}",
                   atGameStart, p_setting->b_override, p_setting->player_count, p_setting->b_player0_use_km,
                   p_setting->b_use_player0_profile);

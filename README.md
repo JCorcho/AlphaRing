@@ -91,7 +91,9 @@ Open the Xbox menu with `F4` or `Start + Left Stick Click` **on any controller**
 
 **3-4 players in Halo CE or Halo 2 with the mode above off - fallback:** the games' own Anniversary renderer draws two views only. `F1` → Splitscreen → Options → *Halo CE/2: Classic graphics with 3-4 players* (off by default) starts such missions in Classic graphics, where everyone gets a view; Back (Tab) still switches mid-mission.
 
-**Colors in campaign:** the campaigns of Halo CE, Halo 2, Halo 3 and ODST never show player colors - every co-op player is a fixed character (in MCC itself too), so neither MCC's customization nor the colors picked here change them. Colors and armor picked here show where the game uses them: every game's multiplayer, and the campaigns of Reach and Halo 4.
+**Campaign colors (experimental, on by default):** `F1` → Splitscreen → Options → *Halo CE/2: campaign colors* paints each player's body in their colors in the Halo CE and Halo 2 campaigns - Halo CE in Classic graphics; Halo 2 only if the campaign Chief's armor takes colors at all (an open question, see below). It also tints multiplayer bodies, so turn it off for team games there.
+
+**Colors in campaign (what the games do themselves):** the campaigns of Halo CE, Halo 2, Halo 3 and ODST never show player colors - every co-op player is a fixed character (in MCC itself too), so neither MCC's customization nor the colors picked here change them. Colors and armor picked here show where the game uses them: every game's multiplayer, and the campaigns of Reach and Halo 4.
 
 **Campaign:** everything above works the same in campaign missions as in multiplayer. What a game shows of a player's customization in co-op is up to that game (Reach shows the full Spartan armor; games with fixed characters, such as Halo 3's Arbiter and Elites, show less or nothing). For colors, *Copy My Look From MCC* is the most reliable way, as it takes MCC's exact values instead of the menu's 30-color table.
 

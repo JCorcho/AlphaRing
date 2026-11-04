@@ -67,3 +67,7 @@ DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_FIRST_PERSON_2, 0x64F4E)
 DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_FIRST_PERSON_3, 0x65559)
 DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_OBJECT_SYNC, 0x6A00C)
 DefOffset(OFFSET_HALO2_TWO_PLAYERS_TEST_SCREEN_EFFECT, 0x6F40C)
+
+// Campaign colors (module/entry/halo2/colors.cpp)
+DefOffset(OFFSET_HALO2_PF_PLAYER_COLORS, 0x68CC40) // bool (int8 colors[4] = player + 0x7C, int16 team, float out[4][3]) - a player's placement colors for player_spawn; false in a campaign (the body keeps its model's)
+DefOffset(OFFSET_HALO2_PF_PALETTE_COLOR, 0x37960) // float* (float out[3], int index) - MCC's player color palette (the globals tag's block); the default color for an index out of range

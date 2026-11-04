@@ -31,5 +31,6 @@ struct MenuState {
     int deadzone[4];          // extra stick deadzone in percent, 0 = none (for drifting sticks)
     bool halo2TwoViewFix;     // Halo 2's two Anniversary views drawn by the mod (a black-screen fix)
     bool classicGraphics3P;   // Halo CE/2 missions with 3-4 players start in Classic graphics
-    bool anniversaryQuad;     // Halo 2 with 3-4 players in Anniversary graphics
+    bool anniversaryQuad;     // Halo CE/2 with 3-4 players in Anniversary graphics
+    bool campaignColors;      // Halo CE/2 campaign bodies in each player's colors
 };

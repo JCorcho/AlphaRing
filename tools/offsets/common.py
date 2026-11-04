@@ -16,6 +16,8 @@ MODULES = {
     "groundhog": r"groundhog\groundhog.dll",
     "mcc": r"mcc\binaries\win64\MCC-Win64-Shipping.exe",
 }
+# the paths above are Windows paths; on another OS the install folder is laid out the same way
+MODULES = {name: path.replace("\\", os.sep) for name, path in MODULES.items()}
 
 
 def version():

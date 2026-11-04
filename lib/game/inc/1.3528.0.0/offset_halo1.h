@@ -71,3 +71,8 @@ DefOffset(OFFSET_HALO1_PV_SABER_VIEW_IMAGE_INDEX, 0x1B7B11C)
 DefOffset(OFFSET_HALO1_PV_SABER_ZOOMED_FOV, 0x1944B70) // float, a view below this field of view is zoomed
 DefOffset(OFFSET_HALO1_PV_WINDOW_FIELDS_OF_VIEW, 0x1B7D6E8) // float per view, from view -1
 DefOffset(OFFSET_HALO1_SABER_VIEW_OVERLAY_RECT, 0x4513AC) // in it, its rect is set: left r11d, top r9d, right r10d, bottom eax
+
+// Campaign colors (module/entry/halo1/colors.cpp)
+DefOffset(OFFSET_HALO1_PF_PLAYER_SPAWN, 0xAD4184) // void (int player) - a start location or the co-op respawn; callers check the unit
+DefOffset(OFFSET_HALO1_PF_PLAYERS_UPDATE, 0xAD0720) // void (state*) - each tick: the players' respawns (calls the below)
+DefOffset(OFFSET_HALO1_PF_OBJECT_TRY_AND_GET, 0xB389A4) // void* (int object, unsigned type_mask) - object data, or null

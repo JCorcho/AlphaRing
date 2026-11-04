@@ -708,6 +708,14 @@ namespace MCC::Splitscreen {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("The Anniversary renderers of Halo CE and Halo 2 draw two views; this mode draws all four, two per frame\n"
                                       "in turn (each view at half the frame rate). Takes effect as a mission starts. From kirklandsig/AlphaRing.");
+                if (ImGui::MenuItem("Halo CE/2: campaign colors (experimental)", nullptr, &ms.campaignColors)) {
+                    Settings::ApplySplitscreen(false);
+                    Settings::Save();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Each player's body in their colors in the Halo CE and Halo 2 campaigns, where the games never set them.\n"
+                                      "Halo CE: Classic graphics; Halo 2: only if the campaign Chief's armor takes colors at all. Also tints\n"
+                                      "multiplayer bodies, so turn it off for team games there.");
                 if (ImGui::MenuItem("Halo 2: two-view black-screen fix", nullptr, &ms.halo2TwoViewFix)) {
                     Settings::ApplySplitscreen(false);
                     Settings::Save();
