@@ -29,6 +29,9 @@ const OffsetPatterns kHalo2Patterns[] = {
         At("C7 05 ?? ?? ?? ?? 00 00 00 00 E8 ?? ?? ?? ?? 84 C0 75 ?? E8 ?? ?? ?? ?? 83 F8 02 75 04", 0x18)}},
     {&OFFSET_HALO2_PF_QUIT_TO_LOBBY_TEST, 0x679ee0, Code, {
         At("80 3D ?? ?? ?? ?? 00 74 ?? 80 3D ?? ?? ?? ?? 00 75 ?? B1 01 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 07", 0x19)}},
+    {&OFFSET_HALO2_PF_COPY_GAME_OPTIONS, 0x39ce0, Code, {
+        At("40 53 48 81 EC 30 03 00 00 48 8B D1 48 8D 1D ?? ?? ?? ?? 48 8B CB", 0x0),
+        Rel("48 8B CF E8 ?? ?? ?? ?? 8B 4F 10 E8 ?? ?? ?? ?? B9 10 00 00 00 48 89 05", 0x4, 0x8, 0x0)}},
     {&OFFSET_HALO2_PF_PLAYERS_UPDATE, 0x6a3910, Code, {
         At("48 89 5C 24 08 48 89 74 24 18 48 89 7C 24 20 55 41 54 41 55 41 56 41 57 48 8D AC 24 30 FF FF FF", 0x0),
         Rel("E8 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 38 B8 08 18 00 00", 0x1, 0x5, 0x0)}},
@@ -41,9 +44,6 @@ const OffsetPatterns kHalo2Patterns[] = {
     {&OFFSET_HALO2_PV_SCENARIO, 0xe6f768, Data, {
         Rel("48 8B 05 ?? ?? ?? ?? 8B DE 48 89 7C 24 68 39 98 10 02 00 00", 0x3, 0x7, 0x0),
         Rel("48 8B 05 ?? ?? ?? ?? 33 D2 4C 63 80 6C 01 00 00 41 83 F8 FF", 0x3, 0x7, 0x0)}},
-    {&OFFSET_HALO2_PF_COPY_GAME_OPTIONS, 0x39ce0, Code, {
-        At("40 53 48 81 EC 30 03 00 00 48 8B D1 48 8D 1D ?? ?? ?? ?? 48 8B CB", 0x0),
-        Rel("48 8B CF E8 ?? ?? ?? ?? 8B 4F 10 E8 ?? ?? ?? ?? B9 10 00 00 00 48 89 05", 0x4, 0x8, 0x0)}},
     {&OFFSET_HALO2_PF_CINEMATIC, 0x6f4a20, Code, {
         Rel("E8 ?? ?? ?? ?? 84 C0 75 ?? 44 38 B4 3B CA 00 00 00 74 ?? B0 01 EB", 0x1, 0x5, 0x0),
         Rel("FF E2 E8 ?? ?? ?? ?? 84 C0 0F 85 ?? ?? ?? ?? 66 41 83 BF 10 02 00 00 FF", 0x3, 0x7, 0x0)}},
@@ -144,4 +144,10 @@ const OffsetPatterns kHalo2Patterns[] = {
         At("E8 ?? ?? ?? ?? 90 E8 ?? ?? ?? ?? 84 C0 75 ?? E8 ?? ?? ?? ?? 83 F8 02 75 05 40 B6 01 EB", 0x14)}},
     {&OFFSET_HALO2_TWO_PLAYERS_TEST_SCREEN_EFFECT, 0x6f40c, Code, {
         At("E8 ?? ?? ?? ?? 83 F8 02 75 0E 4C 8D 44 24 28 8D 50 FF E8 ?? ?? ?? ?? 90", 0x5)}},
+    {&OFFSET_HALO2_PF_PLAYER_COLORS, 0x68cc40, Code, {
+        At("48 89 5C 24 08 48 89 6C 24 18 48 89 74 24 20 57 41 56 41 57 48 83 EC 20", 0x0),
+        Rel("E8 ?? ?? ?? ?? 84 C0 74 ?? 0F 10 44 24 30 83 8C 24 D4 00 00 00 0F", 0x1, 0x5, 0x0)}},
+    {&OFFSET_HALO2_PF_PALETTE_COLOR, 0x37960, Code, {
+        At("48 83 3D ?? ?? ?? ?? 00 4C 8B C1 48 8B 05 ?? ?? ?? ?? 4C 63 CA F2 0F 10 00", 0x0),
+        Rel("E8 ?? ?? ?? ?? 8B 48 08 F2 0F 10 00 F2 0F 11 47 0C 89 4F 14", 0x1, 0x5, 0x0)}},
 };
