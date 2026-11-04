@@ -4,9 +4,9 @@ namespace MCC::Splitscreen {
     bool Initialize();
     void ImGuiContext();
 
-    // Halo 2 with 3-4 players in Anniversary graphics (module/entry/halo2/anniversary.cpp, from
-    // kirklandsig/AlphaRing): the saved choice, and whether the running mission has the mode - chosen, and
-    // every address it needs in this MCC build - set as the mission starts (ClassicGraphicsScope).
+    // Halo CE and Halo 2 with 3-4 players in Anniversary graphics (module/entry/halo1 and halo2/anniversary.cpp,
+    // from kirklandsig/AlphaRing): the saved choice, and whether the running mission has the mode - chosen,
+    // and every address it needs in this MCC build - set as the mission starts (ClassicGraphicsScope).
     bool AnniversaryQuadChosen();
     bool AnniversaryQuadActive();
     // Halo 2's two-view composite drawn by the mode's shaders (its fix for a black screen, the proper form

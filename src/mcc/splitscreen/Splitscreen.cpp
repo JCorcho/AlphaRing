@@ -14,6 +14,7 @@
 #include <string>
 
 namespace Halo2::Entry::Anniversary { bool Available(); std::string Status(); }
+namespace Halo1::Entry::Anniversary { bool Available(); std::string Status(); }
 
 namespace MCC::Splitscreen {
     DefDetourFunction(__int64, __fastcall, get_index_by_xuid, void* a1, __int64 xuid) {
@@ -55,23 +56,25 @@ namespace MCC::Splitscreen {
         auto p_setting = AlphaRing::Global::MCC::Splitscreen();
         // The mode is set up for every Halo 2 mission it can be (it runs with 3-4 players while Anniversary is
         // on screen: Back switches to Anniversary in the middle of a mission).
-        s_anniversary_quad_active = p_setting->b_override && game == CGameGlobal::Halo2 && AnniversaryQuadChosen() &&
-                                    Halo2::Entry::Anniversary::Available();
+        bool available = game == CGameGlobal::Halo2 ? Halo2::Entry::Anniversary::Available()
+                       : game == CGameGlobal::Halo1 ? Halo1::Entry::Anniversary::Available() : false;
+        s_anniversary_quad_active = p_setting->b_override && AnniversaryQuadChosen() && available;
         LOG_INFO("Splitscreen: {} mission starts: players={} override={} options={} anniversary_bit={} quad: chosen={} available={} -> active={}",
                  game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2", p_setting->player_count, p_setting->b_override,
                  game_options != nullptr, game_options ? (game_options[0] & 1) : -1, AnniversaryQuadChosen(),
-                 game == CGameGlobal::Halo2 && Halo2::Entry::Anniversary::Available(), s_anniversary_quad_active.load());
+                 available, s_anniversary_quad_active.load());
         if (!p_setting->b_override || game_options == nullptr) return;
         if (p_setting->player_count <= 2) return;
         if (!(game_options[0] & 1)) return; // Classic already
         if (s_anniversary_quad_active) {
-            LOG_INFO("Splitscreen: {} players in Halo 2 Anniversary graphics (experimental)", p_setting->player_count);
+            LOG_INFO("Splitscreen: {} players in {} Anniversary graphics (experimental)", p_setting->player_count,
+                     game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2");
             return;
         }
         if (!p_setting->b_classic_graphics_3p) {
             LOG_WARNING("Splitscreen: {} players in {} Anniversary graphics, which draws two views only{}",
                         p_setting->player_count, game == CGameGlobal::Halo1 ? "Halo CE" : "Halo 2",
-                        game == CGameGlobal::Halo2 && AnniversaryQuadChosen() ? " (the 3-4 player mode is missing an address in this build)" : "");
+                        AnniversaryQuadChosen() ? " (the 3-4 player mode is missing an address in this build)" : "");
             return;
         }
 
@@ -698,13 +701,13 @@ namespace MCC::Splitscreen {
                     Settings::Save();
                 if (ImGui::MenuItem("PlayStation controllers (USB/Bluetooth)", nullptr, &ms.nativePlayStation))
                     Settings::Save();
-                if (ImGui::MenuItem("Halo 2: Anniversary graphics with 3-4 players (experimental)", nullptr, &ms.anniversaryQuad)) {
+                if (ImGui::MenuItem("Halo CE/2: Anniversary graphics with 3-4 players (experimental)", nullptr, &ms.anniversaryQuad)) {
                     Settings::ApplySplitscreen(false);
                     Settings::Save();
                 }
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Halo 2's Anniversary renderer draws two views; this mode draws all four, two per frame in turn\n"
-                                      "(each view at half the frame rate). Takes effect as a mission starts. From kirklandsig/AlphaRing.");
+                    ImGui::SetTooltip("The Anniversary renderers of Halo CE and Halo 2 draw two views; this mode draws all four, two per frame\n"
+                                      "in turn (each view at half the frame rate). Takes effect as a mission starts. From kirklandsig/AlphaRing.");
                 if (ImGui::MenuItem("Halo 2: two-view black-screen fix", nullptr, &ms.halo2TwoViewFix)) {
                     Settings::ApplySplitscreen(false);
                     Settings::Save();
@@ -767,6 +770,8 @@ namespace MCC::Splitscreen {
         {
             auto status = Halo2::Entry::Anniversary::Status();
             ImGui::TextDisabled("Halo 2 Anniversary 3-4 players: %s", status.c_str());
+            auto ce = Halo1::Entry::Anniversary::Status();
+            ImGui::TextDisabled("Halo CE Anniversary 3-4 players: %s", ce.c_str());
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("hooked: the mode's hooks are in halo2.dll - active: this mission has the mode - quad: it is drawing four views right now");
         }
